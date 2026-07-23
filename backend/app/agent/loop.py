@@ -103,20 +103,46 @@ def run_agent(
 
     budget = budget or RunBudget.from_settings()
 
-    repo = RunRepository(db)
-    executor = ToolExecutor(registry)
-    # Per-run cache. Results are only valid within one run: the corpus or the
-    # web may have changed since the last one.
-    executor.reset()
-
-    run = repo.create(
+    run = RunRepository(db).create(
         goal,
         session_id=session_id,
         mode=resolved.mode.value if resolved else None,
         provider_name=resolved.provider_name if resolved else getattr(provider, "name", None),
         model=resolved.model if resolved else getattr(provider, "model", None),
+        identity=(context.identity if context else None),
     )
+    return execute_run(
+        db, run, provider, registry, budget,
+        label=resolved.label if resolved else getattr(provider, "model", "injected"),
+        on_step=on_step,
+    )
+
+
+def execute_run(
+    db: Session,
+    run: Run,
+    provider: LLMProvider,
+    registry: ToolRegistry,
+    budget: RunBudget,
+    *,
+    label: str = "",
+    on_step=None,
+) -> RunResult:
+    """Run the loop against an ALREADY-CREATED run row.
+
+    Split from run_agent so the API can create the run, return 202 with its id,
+    and execute afterwards — a caller cannot be handed an id that does not
+    exist yet, and the client can start streaming the trace immediately.
+    """
+    repo = RunRepository(db)
+    executor = ToolExecutor(registry)
+    # Per-run cache. Results are only valid within one run: the corpus or the
+    # web may have changed since the last one.
+    executor.reset()
     repo.start(run)
+
+    goal = run.goal
+    label = label or run.model or "unknown"
 
     messages: list[Message] = prompts.initial_messages(goal)
     consecutive_retries = 0
@@ -134,7 +160,7 @@ def run_agent(
         "run_id": run.id,
         # Surfaced so a trace is self-explanatory: token counts and latency are
         # inexplicable without knowing which model produced them.
-        "provider": resolved.label if resolved else getattr(provider, "model", "injected"),
+        "provider": label,
     })
 
     while True:

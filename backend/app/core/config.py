@@ -87,6 +87,18 @@ class Settings(BaseSettings):
     max_wall_clock_seconds: int = Field(default=300, ge=10)
     max_calls_per_tool: int = Field(default=4, ge=1)
 
+    # -- App secret ----------------------------------------------------------
+    # Signs anonymous trial-identity tokens and salts stored IP hashes.
+    #
+    # No default, deliberately: a secret with a default is a secret that works
+    # silently in dev and is silently worthless in production, where anyone
+    # could then mint identities and reset their own trial quota.
+    #
+    # Rotating it invalidates every trial identity, which resets everyone's
+    # allowance. That is acceptable, but worth knowing before rotating.
+    # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    app_secret: str
+
     # -- Hosted trial --------------------------------------------------------
     # Reachable ONLY through Mode.TRIAL in llm/manager.py. Rule 2 of
     # PROVIDER_ARCHITECTURE.md: a BYOK failure never falls back to these.

@@ -22,7 +22,18 @@ BASE = {
     "openrouter_api_key": "k",
     # Required with no default: a default would hardcode a deployment target.
     "knowledge_base_url": "https://p1.test",
+    # Required with no default: a secret with a default works silently in dev
+    # and is silently worthless in production.
+    "app_secret": "test-secret",
 }
+
+
+def test_app_secret_is_required():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as e:
+        Settings(**{k: v for k, v in BASE.items() if k != "app_secret"})
+    assert "app_secret" in str(e.value).lower()
 
 
 def test_knowledge_base_url_is_required():

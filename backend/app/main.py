@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.health import router as health_router
+from app.api.v1.runs import router as runs_router
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -25,6 +26,7 @@ app = FastAPI(
 # balancers expect a stable, unversioned path. Versioning a liveness check
 # means a future /api/v2 silently breaks the deploy platform's health polling.
 app.include_router(health_router)
+app.include_router(runs_router, prefix="/api/v1")
 
 # "*" is fine while the CLI is the only client. A browser client on a different
 # origin (deferred to M45) requires the real origin here — Project 1's
@@ -34,4 +36,10 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    # The identity cookie must survive a cross-origin browser client (a Vercel
+    # frontend calling a Render backend). Without this the browser drops it and
+    # every request looks like a brand-new visitor — trial quota would never
+    # count anything. Note credentialed CORS forbids allow_origins="*", so a
+    # real deploy must set CORS_ALLOWED_ORIGINS to the actual frontend origin.
+    allow_credentials=True,
 )
