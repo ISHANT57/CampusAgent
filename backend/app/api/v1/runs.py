@@ -215,12 +215,36 @@ def _execute_in_background(run_id: int, resolved) -> None:
         db.close()
 
 
-@router.get("/{run_id}", response_model=RunView)
-def get_run(run_id: int, db: Session = Depends(get_db)):
-    repo = RunRepository(db)
-    run = repo.get(run_id)
-    if run is None:
+def _owned_or_404(run, identity_key: str):
+    """Ownership check for the read endpoints.
+
+    run_id is a sequential integer, so without this anyone can walk 1..N and
+    read every other user's goals, answers, and retrieved document text. Goals
+    are personal ("My CGPA is 6.2, do I qualify?"), so this is a real
+    disclosure, not a theoretical one.
+
+    404, not 403: a 403 confirms the run exists, which hands an enumerator a
+    map of valid ids. An unauthorised read should be indistinguishable from a
+    missing one.
+
+    Runs with NO recorded identity are also refused — fail closed. They predate
+    the API (created via the CLI, which reads the database directly and is
+    unaffected), and "no owner recorded" cannot be proven to mean "belongs to
+    this caller".
+    """
+    if run is None or not run.identity or run.identity != identity_key:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    return run
+
+
+@router.get("/{run_id}", response_model=RunView)
+def get_run(
+    run_id: int,
+    identity: Identity = Depends(current_identity),
+    db: Session = Depends(get_db),
+):
+    repo = RunRepository(db)
+    run = _owned_or_404(repo.get(run_id), identity.key)
 
     return RunView(
         run_id=run.id, status=run.status, goal=run.goal, mode=run.mode,
@@ -237,6 +261,8 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 async def stream_run(
     run_id: int,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    identity: Identity = Depends(current_identity),
+    db: Session = Depends(get_db),
 ):
     """Stream the trace as it is written.
 
@@ -249,12 +275,27 @@ async def stream_run(
     except ValueError:
         after = -1
 
+    # Authorise BEFORE the generator, and raise rather than yield: once a
+    # StreamingResponse has started, the status code is already sent and a
+    # refusal can only be an in-band message with HTTP 200. A denied stream
+    # must be a 404 on the wire.
+    #
+    # The generator opens its own session (the request's is closed by the time
+    # it runs), so only the identity KEY is closed over — a string, not a
+    # request-scoped object.
+    _owned_or_404(RunRepository(db).get(run_id), identity.key)
+    owner_key = identity.key
+
     async def events():
         db = SessionLocal()
         try:
             repo = RunRepository(db)
             run = repo.get(run_id)
-            if run is None:
+            # Re-checked inside: between authorisation and the first read the
+            # run could in principle have been reassigned. Cheap, and it means
+            # the invariant holds at the point of disclosure, not just at the
+            # point of entry.
+            if run is None or run.identity != owner_key:
                 yield _sse("error", {"message": "Run not found"})
                 return
 

@@ -197,6 +197,58 @@ def test_get_run_404s_for_an_unknown_id(client):
     assert client.get("/api/v1/runs/99999999").status_code == 404
 
 
+# --- authorisation (IDOR) ---------------------------------------------------
+
+def test_another_browser_cannot_read_your_run(client, fake_resolution):
+    """run_id is a sequential integer.
+
+    Without an ownership check, walking 1..N exposes every user's goals,
+    answers, and retrieved document text — and goals are personal ("My CGPA is
+    6.2, do I qualify?"). A real disclosure, not a theoretical one.
+    """
+    run_id = client.post("/api/v1/runs", json={"goal": "my private question"}).json()["run_id"]
+    assert client.get(f"/api/v1/runs/{run_id}").status_code == 200
+
+    other = TestClient(app)          # a different browser, a different cookie
+    r = other.get(f"/api/v1/runs/{run_id}")
+    # 404, not 403: a 403 confirms the run exists and hands an enumerator a map
+    # of valid ids.
+    assert r.status_code == 404
+    assert "private question" not in r.text
+
+
+def test_another_browser_cannot_stream_your_trace(client, fake_resolution):
+    run_id = client.post("/api/v1/runs", json={"goal": "streamed secret"}).json()["run_id"]
+
+    other = TestClient(app)
+    r = other.get(f"/api/v1/runs/{run_id}/events")
+    # Refused on the wire, not as an in-band SSE message: once a
+    # StreamingResponse starts, the status is already 200.
+    assert r.status_code == 404
+    assert "streamed secret" not in r.text
+
+
+def test_a_run_with_no_recorded_owner_is_refused(client, fake_resolution):
+    """Fail closed.
+
+    Runs predating the API (created via the CLI) have no identity. "No owner
+    recorded" cannot be proven to mean "belongs to this caller". The CLI reads
+    the database directly and is unaffected.
+    """
+    from app.core.database import SessionLocal
+    from app.repositories.run_repository import RunRepository
+
+    db = SessionLocal()
+    try:
+        legacy = RunRepository(db).create("a legacy run")   # identity=None
+        legacy_id = legacy.id
+    finally:
+        db.close()
+
+    assert client.get(f"/api/v1/runs/{legacy_id}").status_code == 404
+    assert client.get(f"/api/v1/runs/{legacy_id}/events").status_code == 404
+
+
 def test_get_run_returns_the_trace(client, fake_resolution):
     run_id = client.post("/api/v1/runs", json={"goal": "trace me"}).json()["run_id"]
     body = client.get(f"/api/v1/runs/{run_id}").json()
@@ -330,10 +382,16 @@ def test_sse_tool_call_events_carry_their_arguments(client, fake_resolution):
     assert "6.5 - 6.2" in body
 
 
-def test_sse_on_an_unknown_run_reports_and_closes(client):
-    with client.stream("GET", "/api/v1/runs/99999999/events") as r:
-        body = "".join(r.iter_text())
-    assert "event: error" in body and "not found" in body.lower()
+def test_sse_on_an_unknown_run_is_a_404_not_a_200_with_an_error_event(client):
+    """Changed by the authorisation fix, and improved by it.
+
+    Previously an unknown run opened a stream and reported the problem in-band,
+    which meant HTTP 200 for a request that could not succeed. Now the check
+    happens before the StreamingResponse starts, so the refusal is a real 404 —
+    and a missing run is indistinguishable from someone else's, which is what
+    stops id enumeration.
+    """
+    assert client.get("/api/v1/runs/99999999/events").status_code == 404
 
 
 def test_sse_sets_headers_that_stop_proxies_buffering(client, fake_resolution):
