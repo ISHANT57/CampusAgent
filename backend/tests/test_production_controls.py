@@ -68,12 +68,12 @@ def test_a_key_in_a_step_never_reaches_the_database():
     """The guarantee, end to end: redaction is on WRITE."""
     from app.core.database import SessionLocal
     from app.models.step import StepKind
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     marker = "sk-or-v1-MARKERvalue0123456789abcdefghijklmnop"
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.create("redaction check", identity="test")
         repo.add_step(run, StepKind.OBSERVATION.value, tool_name="t",
                       output={"error": f"provider rejected {marker}"},
@@ -91,11 +91,11 @@ def test_reaper_finishes_a_run_whose_heartbeat_went_stale():
     from app.core.database import SessionLocal
     from app.core.reaper import reap_stale_runs
     from app.models.run import RunStatus
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.create("abandoned", identity="test")
         repo.start(run)
         run.heartbeat_at = datetime.now(timezone.utc) - timedelta(hours=2)
@@ -115,11 +115,11 @@ def test_reaper_leaves_a_live_run_alone():
     from app.core.database import SessionLocal
     from app.core.reaper import reap_stale_runs
     from app.models.run import RunStatus
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.create("still working", identity="test")
         repo.start(run)          # heartbeat is now
         reap_stale_runs(db)
@@ -134,11 +134,11 @@ def test_reaper_catches_a_run_created_but_never_started():
     from app.core.database import SessionLocal
     from app.core.reaper import reap_stale_runs
     from app.models.run import RunStatus
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.create("never started", identity="test")   # no heartbeat at all
         run.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
         db.commit()

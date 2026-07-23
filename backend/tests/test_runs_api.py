@@ -225,11 +225,11 @@ def test_refusals_do_not_create_a_run(client, monkeypatch):
     """
     from app.core.database import SessionLocal
     from app.llm.manager import NoProviderAvailable
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
-        before = len(RunRepository(db).recent(200))
+        before = len(RunRepository(db, identity=UNSCOPED).recent(200))
     finally:
         db.close()
 
@@ -243,7 +243,7 @@ def test_refusals_do_not_create_a_run(client, monkeypatch):
 
     db = SessionLocal()
     try:
-        assert len(RunRepository(db).recent(200)) == before
+        assert len(RunRepository(db, identity=UNSCOPED).recent(200)) == before
     finally:
         db.close()
 
@@ -296,11 +296,11 @@ def test_a_run_with_no_recorded_owner_is_refused(client, fake_resolution):
     the database directly and is unaffected.
     """
     from app.core.database import SessionLocal
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
-        legacy = RunRepository(db).create("a legacy run")   # identity=None
+        legacy = RunRepository(db, identity=UNSCOPED).create("a legacy run")   # identity=None
         legacy_id = legacy.id
     finally:
         db.close()
@@ -323,13 +323,13 @@ def test_sse_streams_and_terminates_on_a_finished_run(client, fake_resolution):
     from app.core.database import SessionLocal
     from app.models.run import RunStatus
     from app.models.step import StepKind
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     run_id = client.post("/api/v1/runs", json={"goal": "streamed"}).json()["run_id"]
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.get(run_id)
         repo.add_step(run, StepKind.THOUGHT.value, output={"text": "thinking"})
         repo.add_step(run, StepKind.FINAL.value, output={"answer": "done"})
@@ -357,13 +357,13 @@ def test_sse_resumes_from_last_event_id(client, fake_resolution):
     from app.core.database import SessionLocal
     from app.models.run import RunStatus
     from app.models.step import StepKind
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     run_id = client.post("/api/v1/runs", json={"goal": "resumed"}).json()["run_id"]
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.get(run_id)
         for i in range(4):
             repo.add_step(run, StepKind.THOUGHT.value, output={"text": f"step {i}"})
@@ -389,14 +389,14 @@ def test_sse_summarises_observations_instead_of_streaming_them_whole(client, fak
     from app.core.database import SessionLocal
     from app.models.run import RunStatus
     from app.models.step import StepKind
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     big = "PASSAGE " * 2000
     run_id = client.post("/api/v1/runs", json={"goal": "big"}).json()["run_id"]
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.get(run_id)
         repo.add_step(
             run, StepKind.OBSERVATION.value, tool_name="knowledge_search",
@@ -424,12 +424,12 @@ def test_sse_tool_call_events_carry_their_arguments(client, fake_resolution):
     from app.core.database import SessionLocal
     from app.models.run import RunStatus
     from app.models.step import StepKind
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     run_id = client.post("/api/v1/runs", json={"goal": "args"}).json()["run_id"]
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run = repo.get(run_id)
         repo.add_step(run, StepKind.TOOL_CALL.value, tool_name="calculator",
                       input={"expression": "6.5 - 6.2"})
@@ -457,12 +457,12 @@ def test_sse_on_an_unknown_run_is_a_404_not_a_200_with_an_error_event(client):
 def test_sse_sets_headers_that_stop_proxies_buffering(client, fake_resolution):
     from app.core.database import SessionLocal
     from app.models.run import RunStatus
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     run_id = client.post("/api/v1/runs", json={"goal": "headers"}).json()["run_id"]
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         repo.finish(repo.get(run_id), RunStatus.COMPLETED, answer="x")
     finally:
         db.close()

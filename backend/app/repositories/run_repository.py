@@ -25,10 +25,43 @@ from app.models.run import Run, RunStatus
 from app.models.step import Step
 
 
+#: Sentinel for "this caller is trusted and wants every run".
+#:
+#: Ownership is a REQUIRED argument, not an optional filter. An endpoint that
+#: forgets to scope its query leaks every user's goals and answers — which
+#: already happened once, on the run read endpoints, and was caught only by a
+#: security review. Making the parameter required turns that mistake into a
+#: TypeError at import rather than a disclosure in production.
+#:
+#: Bypassing it is possible but must be typed out, so it shows up in a diff:
+#:     RunRepository(db, identity=UNSCOPED)   # CLI, background executor
+UNSCOPED = object()
+
+
 class RunRepository:
-    def __init__(self, db: Session, tenant_id: int | None = None):
+    def __init__(self, db: Session, *, identity, tenant_id: int | None = None):
+        """`identity` scopes every read to one browser's runs.
+
+        Pass the identity key for anything reachable over HTTP. Pass UNSCOPED
+        only for callers that are trusted by construction — the CLI (a local
+        operator) and the background executor (already resolved the run it
+        owns).
+        """
         self.db = db
+        self.identity = None if identity is UNSCOPED else identity
         self.tenant_id = tenant_id if tenant_id is not None else get_settings().default_tenant_id
+
+    def _scope(self, stmt):
+        """The single control point. Every read goes through it.
+
+        Same pattern as Project 1's OrgScopedRepository: filtering in one place
+        makes cross-caller leakage structurally impossible, rather than
+        something each future query has to remember.
+        """
+        stmt = stmt.where(Run.tenant_id == self.tenant_id)
+        if self.identity is not None:
+            stmt = stmt.where(Run.identity == self.identity)
+        return stmt
 
     # -- runs ---------------------------------------------------------------
 
@@ -62,13 +95,10 @@ class RunRepository:
         return run
 
     def get(self, run_id: int) -> Run | None:
-        # Tenant-scoped even though tenant_id is always 1 — a query that
-        # forgets the filter today is a cross-tenant leak the day it stops
-        # being 1, and by then nobody remembers which queries were written
-        # before the switch.
-        return self.db.scalar(
-            select(Run).where(Run.id == run_id, Run.tenant_id == self.tenant_id)
-        )
+        """Returns None for another caller's run, so a missing run and an
+        unauthorised one are indistinguishable to the caller — which is what
+        stops id enumeration."""
+        return self.db.scalar(self._scope(select(Run).where(Run.id == run_id)))
 
     def start(self, run: Run) -> None:
         run.status = RunStatus.RUNNING.value
@@ -95,15 +125,17 @@ class RunRepository:
         run.finished_at = datetime.now(timezone.utc)
         self.db.commit()
 
-    def recent(self, limit: int = 20) -> list[Run]:
+    def recent(self, limit: int = 20, offset: int = 0) -> list[Run]:
         return list(
             self.db.scalars(
-                select(Run)
-                .where(Run.tenant_id == self.tenant_id)
-                .order_by(Run.id.desc())
-                .limit(limit)
+                self._scope(select(Run)).order_by(Run.id.desc()).offset(offset).limit(limit)
             )
         )
+
+    def count(self) -> int:
+        from sqlalchemy import func
+
+        return self.db.scalar(self._scope(select(func.count(Run.id)))) or 0
 
     # -- steps --------------------------------------------------------------
 

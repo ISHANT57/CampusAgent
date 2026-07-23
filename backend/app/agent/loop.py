@@ -28,7 +28,7 @@ from app.llm.base import LLMProvider, Message
 from app.llm.manager import Mode, ResolvedProvider, RunContext, resolve
 from app.models.run import Run, RunStatus
 from app.models.step import StepKind
-from app.repositories.run_repository import RunRepository
+from app.repositories.run_repository import UNSCOPED, RunRepository
 from app.tools.base import ToolResult
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
@@ -103,7 +103,7 @@ def run_agent(
 
     budget = budget or RunBudget.from_settings()
 
-    run = RunRepository(db).create(
+    run = RunRepository(db, identity=UNSCOPED).create(
         goal,
         session_id=session_id,
         mode=resolved.mode.value if resolved else None,
@@ -134,7 +134,7 @@ def execute_run(
     and execute afterwards — a caller cannot be handed an id that does not
     exist yet, and the client can start streaming the trace immediately.
     """
-    repo = RunRepository(db)
+    repo = RunRepository(db, identity=UNSCOPED)
     executor = ToolExecutor(registry)
     # Per-run cache. Results are only valid within one run: the corpus or the
     # web may have changed since the last one.
@@ -164,6 +164,20 @@ def execute_run(
     })
 
     while True:
+        # Cooperative cancellation. Checked at the top of each iteration rather
+        # than enforced from outside: an in-flight provider call cannot be
+        # killed (Python cannot kill a thread), and tearing one down mid-flight
+        # would leave the trace inconsistent with what was actually spent.
+        # So cancelling takes effect within one step, not instantly.
+        db.refresh(run)
+        if run.status == RunStatus.CANCELLED.value:
+            emit("cancelled", {"run_id": run.id})
+            return _finish(
+                repo, run, budget, RunStatus.CANCELLED,
+                error="Cancelled by the user.",
+                answer=_best_effort(messages),
+            )
+
         state = budget.check()
         if state is not BudgetState.OK:
             reason = budget.describe(state)

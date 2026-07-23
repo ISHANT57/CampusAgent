@@ -32,6 +32,7 @@ is `WHERE idx > n`, not a replay buffer.
 
 import asyncio
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -43,7 +44,7 @@ from app.core.identity import COOKIE_NAME, MAX_AGE_SECONDS, Identity, resolve_or
 from app.core.rate_limit import RUN_CREATE_LIMIT, RUN_READ_LIMIT, limiter
 from app.llm.manager import ByokConfig, Mode, NoProviderAvailable, RunContext, resolve
 from app.models.run import RunStatus
-from app.repositories.run_repository import RunRepository
+from app.repositories.run_repository import UNSCOPED, RunRepository
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -100,6 +101,27 @@ class StepView(BaseModel):
     error: str | None = None
 
 
+class RunSummary(BaseModel):
+    """One row in run history. No steps — a list of 20 runs with full traces
+    would be megabytes, and the list view shows none of it."""
+
+    run_id: int
+    status: str
+    goal: str
+    mode: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    step_count: int = 0
+    total_tokens: int = 0
+    elapsed_seconds: float | None = None
+    created_at: str | None = None
+
+
+class RunListResponse(BaseModel):
+    runs: list[RunSummary]
+    total: int
+
+
 class RunView(BaseModel):
     run_id: int
     status: str
@@ -109,6 +131,13 @@ class RunView(BaseModel):
     model: str | None = None
     answer: str | None = None
     error: str | None = None
+    # F2: shown in the run header. Already recorded on `runs`; previously just
+    # not returned.
+    step_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    elapsed_seconds: float | None = None
+    created_at: str | None = None
     steps: list[StepView]
 
 
@@ -175,7 +204,7 @@ def create_run(
         )
         raise HTTPException(status_code=code, detail={"message": str(e), "reason": e.reason})
 
-    run = RunRepository(db).create(
+    run = RunRepository(db, identity=UNSCOPED).create(
         payload.goal,
         session_id=payload.session_id,
         mode=resolved.mode.value,
@@ -207,7 +236,7 @@ def _execute_in_background(run_id: int, resolved) -> None:
 
     db = SessionLocal()
     try:
-        run = RunRepository(db).get(run_id)
+        run = RunRepository(db, identity=UNSCOPED).get(run_id)
         if run is None:
             return
         execute_run(db, run, resolved.provider, registry, resolved.budget, label=resolved.label)
@@ -216,33 +245,31 @@ def _execute_in_background(run_id: int, resolved) -> None:
         # means something structural. The run must not be left `running`
         # forever — a status nobody can distinguish from "still thinking".
         db.rollback()
-        run = RunRepository(db).get(run_id)
+        run = RunRepository(db, identity=UNSCOPED).get(run_id)
         if run and run.status not in {s.value for s in RunStatus.terminal()}:
-            RunRepository(db).finish(
+            RunRepository(db, identity=UNSCOPED).finish(
                 run, RunStatus.FAILED, error=f"Run crashed: {type(e).__name__}: {e}"
             )
     finally:
         db.close()
 
 
-def _owned_or_404(run, identity_key: str):
-    """Ownership check for the read endpoints.
+def _owned_or_404(run):
+    """Turn "not yours or not there" into 404.
 
-    run_id is a sequential integer, so without this anyone can walk 1..N and
-    read every other user's goals, answers, and retrieved document text. Goals
-    are personal ("My CGPA is 6.2, do I qualify?"), so this is a real
-    disclosure, not a theoretical one.
+    Ownership itself is enforced by the REPOSITORY: RunRepository(identity=...)
+    filters every read, so get() already returns None for another caller's run.
+    This is now only a null check.
 
-    404, not 403: a 403 confirms the run exists, which hands an enumerator a
-    map of valid ids. An unauthorised read should be indistinguishable from a
-    missing one.
+    That is the point of F0. Previously ownership was a guard the endpoint had
+    to remember, and the next endpoint could forget it — which is exactly how
+    the original IDOR happened. Now forgetting is a TypeError at import,
+    because `identity` is a required argument.
 
-    Runs with NO recorded identity are also refused — fail closed. They predate
-    the API (created via the CLI, which reads the database directly and is
-    unaffected), and "no owner recorded" cannot be proven to mean "belongs to
-    this caller".
+    404, not 403: a 403 confirms the run exists and hands an enumerator a map
+    of valid ids.
     """
-    if run is None or not run.identity or run.identity != identity_key:
+    if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
     return run
 
@@ -255,18 +282,98 @@ def get_run(
     identity: Identity = Depends(current_identity),
     db: Session = Depends(get_db),
 ):
-    repo = RunRepository(db)
-    run = _owned_or_404(repo.get(run_id), identity.key)
+    repo = RunRepository(db, identity=identity.key)
+    run = _owned_or_404(repo.get(run_id))
 
     return RunView(
         run_id=run.id, status=run.status, goal=run.goal, mode=run.mode,
         provider=run.provider_name, model=run.model,
         answer=run.final_answer, error=run.error,
+        step_count=run.step_count,
+        prompt_tokens=run.prompt_tokens, completion_tokens=run.completion_tokens,
+        elapsed_seconds=_elapsed(run),
+        created_at=run.created_at.isoformat() if run.created_at else None,
         steps=[
             StepView(idx=s.idx, kind=s.kind, tool_name=s.tool_name, output=s.output, error=s.error)
             for s in repo.steps(run_id)
         ],
     )
+
+
+@router.get("", response_model=RunListResponse)
+@limiter.limit(RUN_READ_LIMIT)
+def list_runs(
+    request: Request,
+    limit: int = 20,
+    offset: int = 0,
+    identity: Identity = Depends(current_identity),
+    db: Session = Depends(get_db),
+):
+    """This caller's runs, newest first.
+
+    Scoped by the repository, not by a filter written here — a list endpoint
+    that forgets ownership leaks EVERY run, which is a worse version of the
+    IDOR already found on the read endpoints. Passing `identity` is required,
+    so forgetting is impossible rather than merely unlikely.
+
+    Cookie-keyed: clearing browser data loses this history, and there is no
+    account to recover it from. The UI must say so rather than let someone
+    discover it.
+    """
+    limit = max(1, min(limit, 100))
+    repo = RunRepository(db, identity=identity.key)
+    return RunListResponse(
+        runs=[
+            RunSummary(
+                run_id=r.id, status=r.status, goal=r.goal, mode=r.mode,
+                provider=r.provider_name, model=r.model,
+                step_count=r.step_count,
+                total_tokens=r.prompt_tokens + r.completion_tokens,
+                elapsed_seconds=_elapsed(r),
+                created_at=r.created_at.isoformat() if r.created_at else None,
+            )
+            for r in repo.recent(limit=limit, offset=max(0, offset))
+        ],
+        total=repo.count(),
+    )
+
+
+@router.post("/{run_id}/cancel", response_model=RunView)
+@limiter.limit(RUN_READ_LIMIT)
+def cancel_run(
+    request: Request,
+    run_id: int,
+    identity: Identity = Depends(current_identity),
+    db: Session = Depends(get_db),
+):
+    """Stop a running agent.
+
+    Cooperative, not forceful: the loop checks the run's status at the top of
+    each iteration and stops there. Killing a thread mid-provider-call would
+    leave the trace inconsistent with what was actually spent, and Python
+    cannot kill a thread anyway.
+
+    So an in-flight tool call still completes — cancellation takes effect
+    within one step, not instantly. Without this a run can burn its whole
+    budget with no way to stop it.
+    """
+    repo = RunRepository(db, identity=identity.key)
+    run = _owned_or_404(repo.get(run_id))
+
+    if run.status in {s.value for s in RunStatus.terminal()}:
+        # Already finished. Not an error — the client may simply have raced the
+        # final step.
+        return get_run(request=request, run_id=run_id, identity=identity, db=db)
+
+    repo.finish(run, RunStatus.CANCELLED, error="Cancelled by the user.")
+    return get_run(request=request, run_id=run_id, identity=identity, db=db)
+
+
+def _elapsed(run) -> float | None:
+    if not run.started_at:
+        return None
+    end = run.finished_at or datetime.now(timezone.utc)
+    return round((end - run.started_at).total_seconds(), 1)
 
 
 @router.get("/{run_id}/events")
@@ -295,19 +402,19 @@ async def stream_run(
     # The generator opens its own session (the request's is closed by the time
     # it runs), so only the identity KEY is closed over — a string, not a
     # request-scoped object.
-    _owned_or_404(RunRepository(db).get(run_id), identity.key)
+    _owned_or_404(RunRepository(db, identity=identity.key).get(run_id))
     owner_key = identity.key
 
     async def events():
         db = SessionLocal()
         try:
-            repo = RunRepository(db)
+            repo = RunRepository(db, identity=owner_key)
             run = repo.get(run_id)
             # Re-checked inside: between authorisation and the first read the
             # run could in principle have been reassigned. Cheap, and it means
             # the invariant holds at the point of disclosure, not just at the
             # point of entry.
-            if run is None or run.identity != owner_key:
+            if run is None:
                 yield _sse("error", {"message": "Run not found"})
                 return
 

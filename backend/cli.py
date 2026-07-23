@@ -166,11 +166,11 @@ def cmd_tools(args: argparse.Namespace) -> int:
 
 def cmd_trace(args: argparse.Namespace) -> int:
     from app.core.database import SessionLocal
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
-        repo = RunRepository(db)
+        repo = RunRepository(db, identity=UNSCOPED)
         run_row = repo.get(args.run_id)
         if run_row is None:
             console.print(f"[red]run {args.run_id} not found[/]")
@@ -190,14 +190,14 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
 def cmd_runs(args: argparse.Namespace) -> int:
     from app.core.database import SessionLocal
-    from app.repositories.run_repository import RunRepository
+    from app.repositories.run_repository import UNSCOPED, RunRepository
 
     db = SessionLocal()
     try:
         table = Table(title="recent runs")
         for col in ("id", "status", "steps", "goal"):
             table.add_column(col, overflow="fold")
-        for r in RunRepository(db).recent(args.limit):
+        for r in RunRepository(db, identity=UNSCOPED).recent(args.limit):
             table.add_row(str(r.id), r.status, str(r.step_count), r.goal[:70])
         console.print(table)
         return 0

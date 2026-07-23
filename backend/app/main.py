@@ -15,6 +15,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.health import router as health_router
+from app.api.v1.providers import router as providers_router
 from app.api.v1.runs import router as runs_router
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
@@ -63,6 +64,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # silently breaks the deploy platform's polling.
 app.include_router(health_router)
 app.include_router(runs_router, prefix="/api/v1")
+app.include_router(providers_router, prefix="/api/v1")
 
 # CORS. The identity cookie must survive a cross-origin browser client (a
 # Vercel frontend calling a Render backend), which requires allow_credentials.
