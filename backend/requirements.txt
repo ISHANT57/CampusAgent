@@ -1,0 +1,63 @@
+# CampusBrain Agent — backend dependencies.
+# Pinned exactly, matching Project 1's convention: reproducible installs matter
+# more than automatic upgrades on a project deployed from a Docker build.
+#
+# PYTHON 3.12 — pinned in .python-version, and the Dockerfile (M44) must match.
+# This machine's default is 3.14.6, on which pydantic-core and selectolax have
+# no wheels and fall back to source builds that need a C toolchain. Chasing
+# cp314 wheels would mean developing on a runtime the deployment does not use,
+# which is precisely the dev/prod divergence that produces "works on my machine".
+# Create the venv with:  uv venv --python 3.12 .venv
+
+# --- Web ---------------------------------------------------------------------
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+
+# --- Data --------------------------------------------------------------------
+sqlalchemy==2.0.35
+alembic==1.13.3
+# psycopg3, not psycopg2 — a deliberate divergence from Project 1.
+# psycopg2-binary ships no wheel for Python 3.14 (this machine runs 3.14.6) and
+# falls back to a source build that needs pg_config and a C toolchain. psycopg3
+# is the maintained driver, SQLAlchemy 2.0 supports it natively, and it has
+# current wheels. Cost: the URL scheme is `postgresql+psycopg://`, not
+# `postgresql+psycopg2://`. Getting that wrong is a confusing import error.
+psycopg[binary]==3.3.4
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# --- HTTP / resilience -------------------------------------------------------
+# httpx: the ONLY HTTP client. Every provider (OpenRouter, Gemini) and every
+# external tool (Project 1, Tavily) goes through it — no vendor SDKs, so there
+# is one timeout model and one connection pool rather than four.
+httpx==0.27.2
+tenacity==9.0.0
+
+# --- Tools -------------------------------------------------------------------
+# selectolax over BeautifulSoup for web_read: ~10x lighter, and Render free
+# tier is 512Mi. Project 1 already hit OOM on that budget.
+selectolax==0.3.21
+
+# --- CLI (the product for Phases 4-7) ----------------------------------------
+typer==0.12.5
+rich==13.9.2
+
+# --- Ops ---------------------------------------------------------------------
+structlog==24.4.0
+slowapi==0.1.9
+
+# --- Dev ---------------------------------------------------------------------
+pytest==8.3.3
+
+# DELIBERATELY ABSENT, each with the trigger that revives it (PRD section 7):
+#   langchain / langgraph  -> M47, as a comparison against a baseline we
+#                             understand. Not a foundation.
+#   redis / celery / arq   -> when a second instance exists, or streaming
+#                             crosses processes. One Render instance does not
+#                             need a broker; Postgres covers run state.
+#   openai / google-genai  -> the provider layer is ~80 lines of httpx against
+#                             two documented endpoints. Two SDKs would add two
+#                             HTTP stacks and hide the wire format M0 measured.
+#   qdrant-client          -> P2 owns no vectors. Project 1's Qdrant is
+#                             Project 1's, reachable only over HTTP.

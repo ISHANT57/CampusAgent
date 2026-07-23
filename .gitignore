@@ -1,0 +1,19 @@
+.env
+.env.local
+*.env
+!.env.example
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Spike outputs: raw API responses. Keep the FIXTURES (committed separately),
+# not the multi-megabyte run logs.
+spike/results/*.jsonl
+spike/results/*.json
+
+.vscode/
+.idea/
+.DS_Store

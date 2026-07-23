@@ -1,0 +1,6 @@
+# M0 spike only. Deliberately minimal — this code is deleted at M6.
+# No FastAPI, no SQLAlchemy, no pydantic yet: nothing here needs them, and
+# adding them now would blur the line between the throwaway spike and the app.
+httpx==0.27.2
+python-dotenv==1.0.1
+rich==13.9.2

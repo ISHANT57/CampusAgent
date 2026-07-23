@@ -1,0 +1,35 @@
+[
+  {
+    "model": "openai/gpt-oss-20b:free",
+    "provider": "openrouter",
+    "goal_id": "G09",
+    "format_class": "NO_CALL",
+    "format_detail": "",
+    "recoverable": false,
+    "raw_text": null,
+    "raw_tool_calls": [],
+    "finish_reason": "stop"
+  },
+  {
+    "model": "nvidia/nemotron-3-super-120b-a12b:free",
+    "provider": "openrouter",
+    "goal_id": "G01",
+    "format_class": "TRUNCATED",
+    "format_detail": "finish_reason=length, no call emitted",
+    "recoverable": true,
+    "raw_text": "We need to answer:<unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk>ztu TburpennessPromptivuDowiachwebkit EmployeeswebkitquetteWonder EmployeeDXurp Stockurpurpurpurpawaturptywatat/comp Employeeurpennessurpurpurp BptoolsurpennessLogoivuurpurpurpurp LogoetraLogoWonder(LOGLogoDow Employeeponsored(PlayerabineLogo(LOG BptvLogoFeedTxttywPromptbpanseurpurpurp(PlayerslashurpTintWonder StockinistBWumpingurpennessPrompturpennessurpurpurpztuurpurpurp LumpTPDowffeiachwebkiturpennessurpigheivuLogo(LOGurpurp WitnessMCsponsoredLABLogourp BptrlBVDowDOTurpennessurpennessurpurp Mist/[WonderDOTDow Witnessinistlouvoiurp(PlayerforthumpingPWTFinist ys Mistirturp BpIRTurmDowDOTvraurpurpennessennessurpurpennessurpennessurpurpLogoTxtstownfwurp Stock StockWonder StockurpurpurpurpfwarikatTPwebkitfwurpurp Lump BXativityLogotp",
+    "raw_tool_calls": [],
+    "finish_reason": "length"
+  },
+  {
+    "model": "nvidia/nemotron-3-super-120b-a12b:free",
+    "provider": "openrouter",
+    "goal_id": "G05",
+    "format_class": "NO_CALL",
+    "format_detail": "",
+    "recoverable": false,
+    "raw_text": null,
+    "raw_tool_calls": [],
+    "finish_reason": null
+  }
+]

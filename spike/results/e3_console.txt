@@ -1,0 +1,21 @@
+﻿E3/E4 — 5 models x 12 goals x 3 trials = 180 calls
+
+...xxx...................x..........
+openai/gpt-oss-20b:free  format 97.2%  selection 91.4%  (32/35)  {"OK": 35, 
+"NO_CALL": 1}
+
+x............xxx.x.xxxxxxxxxxxxxxxxx
+nvidia/nemotron-3-super-120b-a12b:free  format 41.7%  selection 93.3%  (14/15) 
+{"TRUNCATED": 1, "OK": 15, "NO_CALL": 1, "API_ERROR": 19}
+
+xxx...xxx..................xxx......
+gemini-3.1-flash-lite  format 100.0%  selection 75.0%  (27/36)  {"OK": 36}
+
+.......xx.xxx......xx.xxxxx...xxxxxx
+gemini-3.5-flash  format 55.6%  selection 90.0%  (18/20)  {"OK": 20, 
+"API_ERROR": 16}
+
+.x.x.xx....xxxx.....xxxxxxxxx.xxxxxx
+gemini-2.5-flash  format 36.1%  selection 100.0%  (13/13)  {"OK": 13, 
+"API_ERROR": 23}
+
