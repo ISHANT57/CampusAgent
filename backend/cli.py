@@ -147,6 +147,42 @@ def cmd_runs(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Run the golden set and print the metrics (M39 + M41)."""
+    from app.eval.runner import run_golden
+
+    def progress(event: str, payload) -> None:
+        if event == "start":
+            console.print(f"[cyan]{payload['id']}[/] {payload['goal'][:72]}")
+        else:
+            s = payload["score"]
+            tool = "[green]OK [/]" if s.tool_correct else "[red]X  [/]"
+            ans = "" if s.answer_ok is None else (" ans:OK" if s.answer_ok else " [red]ans:X[/]")
+            degraded = " [yellow](degraded)[/]" if s.tools_unavailable else ""
+            console.print(
+                f"      {tool} first={s.first_tool or '(none)'} want={s.expected_tool or '(none)'}"
+                f" steps={s.steps}/{s.min_steps}{ans}{degraded}"
+            )
+
+    report = run_golden(only=args.only, on_progress=progress)
+
+    console.print()
+    table = Table(title="agent metrics")
+    table.add_column("metric", style="bold")
+    table.add_column("value", justify="right")
+    for k, v in report.as_dict().items():
+        table.add_row(k.replace("_", " "), str(v))
+    console.print(table)
+
+    if report.skipped:
+        console.print(
+            f"[dim]skipped {len(report.skipped)}: "
+            + ", ".join(f"{g['id']} (needs {', '.join(g['missing_tools'])})" for g in report.skipped)
+            + "[/]"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cli.py", description="CampusBrain autonomous agent.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -167,6 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_runs = sub.add_parser("runs", help="List recent runs.")
     p_runs.add_argument("--limit", type=int, default=10)
     p_runs.set_defaults(func=cmd_runs)
+
+    p_eval = sub.add_parser("eval", help="Run the golden set and report metrics.")
+    p_eval.add_argument("--only", nargs="*", default=None, help="Restrict to these goal ids, e.g. G01 G04.")
+    p_eval.set_defaults(func=cmd_eval)
 
     return parser
 

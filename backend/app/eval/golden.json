@@ -1,0 +1,157 @@
+{
+  "_about": [
+    "The golden set. Promoted from spike/fixtures.py, where these 12 goals were",
+    "labelled during M0 BEFORE any model output was observed — which is what makes",
+    "them evidence rather than a description of whatever the model happened to do.",
+    "",
+    "Every goal is grounded in a fact that exists in Project 1's Sitare corpus:",
+    "CGPA >= 6.5 to retain a scholarship, hostel entry 6:00-21:00, JEE percentile",
+    ">= 85, 91.3% placement rate.",
+    "",
+    "JSON rather than YAML (DEVELOPMENT_STRATEGY said golden.yaml): PyYAML would be",
+    "a new dependency for one config file that json reads from stdlib.",
+    "",
+    "expected_tool      the first tool a competent agent should call",
+    "acceptable_tools   other defensible first moves, scored as correct. Only used",
+    "                   where the goal is genuinely ambiguous — demanding one path",
+    "                   when several are valid measures conformity, not competence.",
+    "min_steps          the shortest correct trajectory, for step efficiency",
+    "answer_contains    substrings a correct final answer must include",
+    "requires           tools that must be registered for this goal to be scored"
+  ],
+
+  "goals": [
+    {
+      "id": "G01",
+      "goal": "What is the minimum CGPA I need to keep my Sitare scholarship?",
+      "kind": "simple_retrieval",
+      "expected_tool": "knowledge_search",
+      "acceptable_tools": [],
+      "min_steps": 3,
+      "answer_contains": ["6.5"],
+      "requires": ["knowledge_search"],
+      "why": "Single-hop internal policy lookup. The baseline: if this fails, nothing else matters."
+    },
+    {
+      "id": "G02",
+      "goal": "Summarise all of the hostel rules for me - I want the complete list, not just highlights.",
+      "kind": "whole_document",
+      "expected_tool": "knowledge_list_documents",
+      "acceptable_tools": ["knowledge_read_document"],
+      "min_steps": 5,
+      "answer_contains": [],
+      "requires": ["knowledge_list_documents"],
+      "why": "HARD. Whole-document task: top-k fragments cannot produce a complete summary. Blocked on M17."
+    },
+    {
+      "id": "G03",
+      "goal": "My CGPA is 6.2. Do I still qualify for the scholarship, and if not, how far short am I?",
+      "kind": "retrieve_then_compute",
+      "expected_tool": "knowledge_search",
+      "acceptable_tools": [],
+      "min_steps": 5,
+      "answer_contains": ["0.3"],
+      "requires": ["knowledge_search", "calculator"],
+      "why": "HARD. Ordering test: the 6.5 threshold must be retrieved before anything can be computed. Expected failure is calling calculator first, on a number it does not have."
+    },
+    {
+      "id": "G04",
+      "goal": "What is 6.5 minus 6.2?",
+      "kind": "pure_compute",
+      "expected_tool": "calculator",
+      "acceptable_tools": [],
+      "min_steps": 3,
+      "answer_contains": ["0.3"],
+      "requires": ["calculator"],
+      "why": "No retrieval needed. Tests that the agent does not reflexively search for everything."
+    },
+    {
+      "id": "G05",
+      "goal": "Who founded Sitare University, and in what year?",
+      "kind": "simple_retrieval",
+      "expected_tool": "knowledge_search",
+      "acceptable_tools": [],
+      "min_steps": 3,
+      "answer_contains": ["Singhal"],
+      "requires": ["knowledge_search"],
+      "why": "A model with this in pretraining may answer without the tool. That is a WRONG_TOOL failure: the corpus is the authority here."
+    },
+    {
+      "id": "G06",
+      "goal": "Find the latest AI/ML internship openings at Indian startups posted this month.",
+      "kind": "external_current",
+      "expected_tool": "web_search",
+      "acceptable_tools": [],
+      "min_steps": 3,
+      "answer_contains": [],
+      "requires": ["web_search"],
+      "why": "Outside the corpus and time-sensitive. Expected failure is knowledge_search, because 'internship' appears heavily in the corpus."
+    },
+    {
+      "id": "G07",
+      "goal": "Compare the hostel entry and exit timings in our documents against what Sitare's website currently says.",
+      "kind": "ambiguous_dual_source",
+      "expected_tool": "knowledge_search",
+      "acceptable_tools": ["web_search", "knowledge_list_documents"],
+      "min_steps": 5,
+      "answer_contains": [],
+      "requires": ["knowledge_search", "web_search"],
+      "why": "DELIBERATELY AMBIGUOUS. Both sources are needed; either is a defensible first move. Exists to check the agent does not freeze or invent a combined tool."
+    },
+    {
+      "id": "G08",
+      "goal": "Read https://www.sitare.org/ and tell me the current admission application deadline.",
+      "kind": "explicit_url",
+      "expected_tool": "web_read",
+      "acceptable_tools": ["web_search"],
+      "min_steps": 3,
+      "answer_contains": [],
+      "requires": ["web_read"],
+      "why": "A URL is handed over directly. web_read is deferred, so web_search is accepted as the MVP-correct fallback."
+    },
+    {
+      "id": "G09",
+      "goal": "Hi! What kinds of things can you help me with?",
+      "kind": "no_tool_needed",
+      "expected_tool": null,
+      "acceptable_tools": [],
+      "min_steps": 1,
+      "answer_contains": [],
+      "requires": [],
+      "why": "HARD. Correct answer is NO TOOL. Tests over-triggering: an agent that searches the corpus for its own capabilities burns a step and looks broken."
+    },
+    {
+      "id": "G10",
+      "goal": "Tell me about the fee structure at Sitare.",
+      "kind": "simple_retrieval",
+      "expected_tool": "knowledge_search",
+      "acceptable_tools": [],
+      "min_steps": 3,
+      "answer_contains": [],
+      "requires": ["knowledge_search"],
+      "why": "Vague but clearly internal. Tests that a loosely-worded question still routes to the corpus."
+    },
+    {
+      "id": "G11",
+      "goal": "How many documents are currently in the knowledge base, and what are they?",
+      "kind": "inventory",
+      "expected_tool": "knowledge_list_documents",
+      "acceptable_tools": [],
+      "min_steps": 3,
+      "answer_contains": [],
+      "requires": ["knowledge_list_documents"],
+      "why": "Asks about the corpus itself, not its content. Blocked on M17."
+    },
+    {
+      "id": "G12",
+      "goal": "I scored 84 percentile in JEE Mains. Am I eligible to apply to Sitare, and if not, by how many percentile points did I miss?",
+      "kind": "retrieve_then_compute",
+      "expected_tool": "knowledge_search",
+      "acceptable_tools": [],
+      "min_steps": 5,
+      "answer_contains": ["1"],
+      "requires": ["knowledge_search", "calculator"],
+      "why": "Multi-hop: retrieve the >= 85 threshold, then compute the shortfall. The multi-turn case M0/E5 gated on."
+    }
+  ]
+}
