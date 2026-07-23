@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { streamUrl } from "@/api/client";
-import { TERMINAL, type RunStatus, type StreamStep } from "@/api/types";
+import { api, streamUrl } from "@/api/client";
+import { TERMINAL, type RunStatus, type StreamStep, type StoredStep } from "@/api/types";
+
+/** Consecutive transport failures before abandoning SSE for polling.
+ *  Low, because a stream that fails three times in a row is not coming back —
+ *  and every retry is another second of a screen saying "resuming…". */
+const MAX_STREAM_FAILURES = 3;
+const POLL_MS = 1500;
 
 export interface RunStreamState {
   steps: StreamStep[];
@@ -43,9 +49,45 @@ export function useRunStream(runId: number | null): RunStreamState {
   const [idleSeconds, setIdleSeconds] = useState(0);
 
   const lastActivity = useRef<number>(Date.now());
+  const failures = useRef(0);
+  const pollTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (runId == null) return;
+    failures.current = 0;
+
+    /** Polling fallback. Rebuilds the same step shape from the stored trace,
+     *  so the timeline renders identically whether it arrived live or not. */
+    const startPolling = () => {
+      if (pollTimer.current != null) return;
+      const tick = async () => {
+        try {
+          const detail = await api.getRun(runId);
+          setGoal(detail.goal);
+          setProvider(detail.provider);
+          setModel(detail.model);
+          setSteps(detail.steps.map(toStreamStep));
+          setStatus(detail.status);
+          setReconnecting(false);
+          lastActivity.current = Date.now();
+          if (TERMINAL.includes(detail.status)) {
+            setAnswer(detail.answer);
+            setError(detail.error);
+            if (pollTimer.current != null) window.clearInterval(pollTimer.current);
+            pollTimer.current = null;
+          }
+        } catch (e) {
+          // The run genuinely is not ours or does not exist. Say so, rather
+          // than showing "resuming…" indefinitely.
+          setError((e as Error).message);
+          setStatus("failed");
+          if (pollTimer.current != null) window.clearInterval(pollTimer.current);
+          pollTimer.current = null;
+        }
+      };
+      void tick();
+      pollTimer.current = window.setInterval(tick, POLL_MS);
+    };
 
     // Reset: navigating between runs must not show the previous one's trace.
     setSteps([]);
@@ -103,9 +145,21 @@ export function useRunStream(runId: number | null): RunStreamState {
         source.close();
         return;
       }
-      // No data means a transport drop. EventSource is already retrying and
-      // will resend Last-Event-ID, so this is "reconnecting", not "failed".
+
+      // No data means a transport-level failure, and EventSource deliberately
+      // hides the status code — a 404 and a dropped connection look identical
+      // here. It just keeps retrying, which is why a broken stream showed
+      // "resuming…" forever instead of failing.
+      //
+      // So: retry a few times (a real drop recovers), then give up on SSE and
+      // poll the run endpoint instead. That covers a genuinely failing stream
+      // AND the proxies that break event streams outright.
+      failures.current += 1;
       setReconnecting(true);
+      if (failures.current >= MAX_STREAM_FAILURES) {
+        source.close();
+        startPolling();
+      }
     });
 
     const ticker = window.setInterval(() => {
@@ -114,6 +168,8 @@ export function useRunStream(runId: number | null): RunStreamState {
 
     return () => {
       window.clearInterval(ticker);
+      if (pollTimer.current != null) window.clearInterval(pollTimer.current);
+      pollTimer.current = null;
       source.close();
     };
   }, [runId]);
@@ -123,3 +179,29 @@ export function useRunStream(runId: number | null): RunStreamState {
 
 export const isTerminal = (status: RunStatus | "connecting") =>
   status !== "connecting" && TERMINAL.includes(status);
+
+/** Stored step -> the stream's summary shape.
+ *
+ *  The polling fallback must produce the SAME structure the SSE path does, or
+ *  the timeline would need two rendering paths and they would drift. */
+function toStreamStep(step: StoredStep): StreamStep {
+  const output = step.output ?? {};
+  const meta = (output.meta ?? {}) as Record<string, unknown>;
+  const base = { idx: step.idx, kind: step.kind, tool: step.tool_name, error: step.error };
+
+  if (step.kind === "observation") {
+    return {
+      ...base,
+      ok: output.ok as boolean | undefined,
+      unavailable: output.unavailable as boolean | undefined,
+      count: (meta.count as number) ?? null,
+      latency_ms: (meta.latency_ms as number) ?? null,
+      preview: String(meta.rendered ?? output.data ?? ""),
+      truncated: false, // the stored record is complete by definition
+    };
+  }
+  if (step.kind === "tool_call") {
+    return { ...base, arguments: (output as Record<string, unknown>) ?? {} };
+  }
+  return { ...base, output };
+}

@@ -32,4 +32,13 @@ EXPOSE 8000
 # four. This app also keeps in-memory rate-limit counters and runs agent loops
 # as in-process background tasks, both of which are per-process — a second
 # worker would silently halve the effective rate limit and split run state.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# --proxy-headers is not optional here. Render terminates TLS at its edge and
+# forwards plain HTTP, so without it request.url.scheme is "http" even on an
+# https:// request. The identity cookie decides Secure/SameSite from that
+# scheme, so getting it wrong makes the browser reject the cookie entirely and
+# every cross-site request arrives anonymous.
+#
+# --forwarded-allow-ips="*" trusts the forwarding headers. Safe because only
+# Render's proxy can reach this container; it would NOT be safe if the port
+# were publicly routable.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips='*'"]

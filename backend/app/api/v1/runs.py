@@ -152,13 +152,31 @@ def current_identity(request: Request, response: Response) -> Identity:
     """
     identity, is_new = resolve_or_issue(request.cookies.get(COOKIE_NAME))
     if is_new:
+        # SameSite=None is REQUIRED for a cross-site deploy.
+        #
+        # The frontend is on vercel.app and the API on onrender.com — different
+        # registrable domains, so every request from the browser is CROSS-SITE.
+        # A Lax cookie is only sent on top-level navigation, never on a
+        # cross-site fetch or EventSource. With Lax, POST /runs created a run
+        # under one identity and the follow-up stream arrived with NO cookie,
+        # got a fresh identity, and 404'd on a run that was not "theirs".
+        #
+        # SameSite=None is only honoured with Secure, and Secure needs HTTPS —
+        # which is also why the app must see the real scheme behind Render's
+        # TLS terminator (uvicorn --proxy-headers, see the Dockerfile). Without
+        # that, this computes secure=False, the browser rejects the cookie
+        # outright, and the symptom is identical.
+        #
+        # Locally (localhost:5173 -> localhost:8000) it is same-site and plain
+        # HTTP, so Lax is correct there and None would be rejected.
+        cross_site = request.url.scheme == "https"
         response.set_cookie(
             COOKIE_NAME,
             identity.token,
             max_age=MAX_AGE_SECONDS,
             httponly=True,     # not readable by page scripts
-            samesite="lax",
-            secure=request.url.scheme == "https",
+            samesite="none" if cross_site else "lax",
+            secure=cross_site,
         )
     return identity
 
