@@ -1,44 +1,52 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { KeyRound, Send } from "lucide-react";
+import { ArrowUp, KeyRound, Sparkles } from "lucide-react";
 import { api } from "@/api/client";
-import { ApiError, type RunSummary } from "@/api/types";
-import { StatusBadge } from "@/components/run/StatusBadge";
+import { ApiError } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { useProvider } from "@/hooks/useProvider";
-import { formatSeconds, formatWhen } from "@/lib/utils";
 
 const EXAMPLES = [
-  "My CGPA is 6.2. Look up the minimum Sitare requires for a scholarship and calculate how far short I am.",
-  "What is the minimum CGPA I need to keep my Sitare scholarship?",
-  "Summarise all of the hostel rules — the complete list, not just highlights.",
-  "Find the latest AI/ML internship openings at Indian startups.",
+  {
+    text: "My CGPA is 6.2. Look up the minimum Sitare requires for a scholarship and calculate how far short I am.",
+    tools: "knowledge + calculator",
+  },
+  {
+    text: "Summarise all of the hostel rules — the complete list, not just highlights.",
+    tools: "whole document",
+  },
+  {
+    text: "Find the latest AI/ML internship openings at Indian startups.",
+    tools: "web search",
+  },
+  {
+    text: "Compare the hostel timings in our documents against Sitare's website.",
+    tools: "two sources",
+  },
 ];
 
+/** The empty state. Centred and generous, in the Perplexity mould: one input,
+ *  large, with nothing competing for attention until there is something to
+ *  show. */
 export function Home() {
   const navigate = useNavigate();
   const { config, hasProvider } = useProvider();
   const [goal, setGoal] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [runs, setRuns] = useState<RunSummary[]>([]);
 
-  useEffect(() => {
-    api.listRuns(15).then((r) => setRuns(r.runs)).catch(() => {});
-  }, []);
-
-  async function submit() {
-    if (!goal.trim() || submitting) return;
+  async function submit(text?: string) {
+    const value = (text ?? goal).trim();
+    if (!value || submitting || !hasProvider) return;
     setSubmitting(true);
     setError(null);
     try {
-      const run = await api.createRun(goal.trim(), config);
+      const run = await api.createRun(value, config);
       navigate(`/runs/${run.run_id}`);
     } catch (e) {
       const err = e as ApiError;
-      // The backend's typed reasons deserve different messages. "hosted
-      // trial is not configured" means connect a provider, not "something
-      // went wrong".
+      // The backend's typed reasons deserve different messages: "connect a
+      // provider" is a next step, "something went wrong" is a dead end.
       if (err.reason === "hosted_unconfigured" || err.reason === "missing_key") {
         setError("Connect an AI provider to run the agent.");
       } else if (err.status === 429) {
@@ -51,97 +59,88 @@ export function Home() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold">CampusBrain Agent</h1>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Give it a goal. It chooses its own tools, and shows you every step.
-        </p>
-      </header>
+    <div className="flex min-h-full flex-col items-center justify-center px-4 py-16">
+      <div className="w-full max-w-2xl">
+        <div className="mb-10 text-center">
+          <h1 className="text-[2rem] font-semibold tracking-tight">
+            What should the agent do?
+          </h1>
+          <p className="mt-2 text-[15px] text-[var(--color-muted)]">
+            Give it a goal. It picks its own tools and shows you every step.
+          </p>
+        </div>
 
-      {!hasProvider && (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-surface)] p-4">
-          <KeyRound size={16} className="mt-0.5 text-[var(--color-accent)]" />
-          <div className="flex-1 text-sm">
-            <p className="font-medium">Connect an AI provider</p>
-            <p className="mt-1 text-[var(--color-muted)]">
-              You bring your own key, so there are no limits.{" "}
-              <span className="text-[var(--color-text)]">Ollama needs no key at all.</span>
-            </p>
-          </div>
-          <Link to="/settings">
-            <Button className="px-3 py-1.5 text-xs">Connect</Button>
+        {!hasProvider && (
+          <Link
+            to="/settings"
+            className="mb-4 flex items-center gap-3 rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 px-4 py-3 text-sm transition-colors hover:bg-[var(--color-accent)]/10"
+          >
+            <KeyRound size={16} className="text-[var(--color-accent)]" />
+            <span className="flex-1">
+              <span className="font-medium">Connect an AI provider</span>
+              <span className="text-[var(--color-muted)]">
+                {" "}
+                — bring your own key, no limits. Ollama needs no key at all.
+              </span>
+            </span>
           </Link>
+        )}
+
+        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg shadow-black/20 transition-colors focus-within:border-[var(--color-border-strong)]">
+          <textarea
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter submits; Shift+Enter is a newline. The familiar contract.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            rows={3}
+            autoFocus
+            placeholder="Ask anything about Sitare, or give it a multi-step task…"
+            className="w-full resize-none bg-transparent px-3 py-2.5 text-[15px] leading-relaxed outline-none placeholder:text-[var(--color-faint)]"
+          />
+          <div className="flex items-center justify-between px-3 pb-1">
+            <span className="truncate text-xs text-[var(--color-faint)] mono">
+              {config ? `${config.provider} · ${config.model ?? "default"}` : "no provider"}
+            </span>
+            <Button
+              onClick={() => submit()}
+              disabled={!goal.trim() || submitting || !hasProvider}
+              className="h-8 w-8 rounded-full p-0"
+              aria-label="Run"
+            >
+              <ArrowUp size={16} />
+            </Button>
+          </div>
         </div>
-      )}
 
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <textarea
-          value={goal}
-          onChange={(e) => setGoal(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-          }}
-          rows={3}
-          placeholder="What should the agent accomplish?"
-          className="w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-[var(--color-faint)]"
-        />
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-xs text-[var(--color-faint)]">
-            {config ? `${config.provider} · ${config.model ?? "default"}` : "no provider"}
-          </span>
-          <Button onClick={submit} disabled={!goal.trim() || submitting || !hasProvider}>
-            <Send size={14} />
-            {submitting ? "starting…" : "Run"}
-          </Button>
-        </div>
-      </div>
+        {error && <p className="mt-3 text-center text-sm text-[var(--color-bad)]">{error}</p>}
 
-      {error && <p className="mt-3 text-sm text-[var(--color-bad)]">{error}</p>}
-
-      {!goal && (
-        <div className="mt-6 space-y-2">
+        <div className="mt-8 space-y-2">
           {EXAMPLES.map((example) => (
             <button
-              key={example}
-              onClick={() => setGoal(example)}
-              className="block w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-left text-sm text-[var(--color-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              key={example.text}
+              onClick={() => submit(example.text)}
+              disabled={!hasProvider || submitting}
+              className="group flex w-full items-start gap-3 rounded-xl border border-transparent px-4 py-3 text-left transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-surface)] disabled:opacity-50"
             >
-              {example}
+              <Sparkles
+                size={15}
+                className="mt-0.5 shrink-0 text-[var(--color-faint)] group-hover:text-[var(--color-accent)]"
+              />
+              <span className="flex-1 text-sm text-[var(--color-muted)] group-hover:text-[var(--color-text)]">
+                {example.text}
+              </span>
+              <span className="shrink-0 pt-0.5 text-[10px] text-[var(--color-faint)]">
+                {example.tools}
+              </span>
             </button>
           ))}
         </div>
-      )}
-
-      {runs.length > 0 && (
-        <section className="mt-10">
-          <h2 className="mb-3 text-xs uppercase tracking-wider text-[var(--color-faint)]">
-            recent runs
-          </h2>
-          <div className="space-y-1">
-            {runs.map((run) => (
-              <Link
-                key={run.run_id}
-                to={`/runs/${run.run_id}`}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[var(--color-surface)]"
-              >
-                <StatusBadge status={run.status} />
-                <span className="min-w-0 flex-1 truncate text-sm">{run.goal}</span>
-                <span className="shrink-0 text-xs text-[var(--color-faint)] mono">
-                  {run.step_count} · {formatSeconds(run.elapsed_seconds)} ·{" "}
-                  {formatWhen(run.created_at)}
-                </span>
-              </Link>
-            ))}
-          </div>
-          {/* Runs belong to a browser cookie. Saying so beats letting someone
-              discover it after clearing site data. */}
-          <p className="mt-3 text-xs text-[var(--color-faint)]">
-            History is tied to this browser. Clearing site data removes it — there are no
-            accounts yet.
-          </p>
-        </section>
-      )}
+      </div>
     </div>
   );
 }

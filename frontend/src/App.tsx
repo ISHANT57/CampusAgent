@@ -1,32 +1,26 @@
-import { Link, Route, Routes } from "react-router-dom";
-import { Settings as SettingsIcon } from "lucide-react";
+import { useState } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
+import { Sidebar } from "./components/Sidebar";
 import { Home } from "./pages/Home";
 import { RunView } from "./pages/RunView";
 import { Settings } from "./pages/Settings";
 
 export default function App() {
-  return (
-    <div className="min-h-full">
-      <nav className="border-b border-[var(--color-border)]">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link to="/" className="text-sm font-medium">
-            CampusBrain <span className="text-[var(--color-accent)]">Agent</span>
-          </Link>
-          <Link
-            to="/settings"
-            className="text-[var(--color-muted)] hover:text-[var(--color-text)]"
-            aria-label="Settings"
-          >
-            <SettingsIcon size={16} />
-          </Link>
-        </div>
-      </nav>
+  const location = useLocation();
+  // Bumped on navigation so the sidebar refetches history after a new run,
+  // without either component owning the other's state.
+  const [refreshKey] = useState(0);
 
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/runs/:id" element={<RunView />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+  return (
+    <div className="flex h-full">
+      <Sidebar refreshKey={refreshKey} />
+      <main key={location.pathname} className="min-w-0 flex-1 overflow-y-auto">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/runs/:id" element={<RunView />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </main>
     </div>
   );
 }
