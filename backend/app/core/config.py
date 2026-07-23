@@ -146,6 +146,16 @@ class Settings(BaseSettings):
 
     # -- App -----------------------------------------------------------------
     cors_allowed_origins: str = "*"
+
+    # Vercel gives every preview deployment a unique host
+    # (campusagent-a1b2c3-you.vercel.app), so an exact allow-list silently
+    # breaks every PR preview — and the failure looks like a 404 on the run,
+    # not a CORS error, because the identity cookie is simply never sent.
+    #
+    # Anchored on purpose: an unanchored pattern would match
+    # "evil-campusagent.vercel.app.attacker.com".
+    # Example: ^https://campusagent-[a-z0-9-]+\.vercel\.app$
+    cors_allowed_origin_regex: str = ""
     log_level: str = "INFO"
 
     @property

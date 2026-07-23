@@ -22,6 +22,30 @@ two-repo design exists to maintain.
 
 ---
 
+## Deploy order — and the trap in it
+
+The frontend needs the backend URL; the backend needs the frontend origin for
+CORS. That looks circular, and the obvious workaround makes it worse.
+
+**Do NOT deploy with `CORS_ALLOWED_ORIGINS=*` intending to fix it later.**
+A wildcard disables credentials, so no identity cookie is sent, so every
+request gets a *fresh* identity — `POST /runs` succeeds and the follow-up
+`GET /runs/{id}` returns **404**, because the run belongs to an identity that
+no longer exists. The frontend is broken, not merely insecure, and the symptom
+points nowhere near CORS.
+
+**The cycle breaks because Vercel URLs are predictable.** Choose the project
+name first and the production origin is knowable before it exists:
+
+| Step | Action |
+|---|---|
+| 1 | Decide the Vercel project name, e.g. `campusagent` → `https://campusagent.vercel.app` |
+| 2 | Deploy the backend to Render with **both** origins already set (localhost for dev, the Vercel URL for prod) |
+| 3 | Build the frontend against the live Render URL, locally — `localhost:5173` is already allow-listed |
+| 4 | Deploy the frontend to Vercel with `VITE_API_BASE_URL=<render url>` |
+
+No second CORS redeploy, and no window where the app is subtly broken.
+
 ## 1. Render
 
 **New → Web Service → connect `ISHANT57/CampusAgent`.**
@@ -47,12 +71,22 @@ APP_SECRET=                             # secrets.token_urlsafe(32)
 KNOWLEDGE_BASE_URL=https://campusbrain.onrender.com
 KNOWLEDGE_BASE_API_KEY=                 # must equal P1's SERVICE_API_KEY
 
-# --- CORS: set the REAL origin once a frontend exists ------------------------
-# "*" and credentialed CORS are mutually exclusive — browsers reject the
-# combination, the identity cookie is never sent, and every request looks like
-# a brand-new visitor. app/main.py detects "*" and disables credentials rather
-# than shipping a broken pairing.
-CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app
+# --- CORS ---------------------------------------------------------------------
+# Set these BEFORE the frontend exists. Vercel URLs are derived from the
+# project name, so the production origin is knowable in advance — which is what
+# breaks the chicken-and-egg (see "Deploy order" below).
+#
+# "*" and credentialed CORS are mutually exclusive: browsers reject the pairing,
+# the identity cookie is never sent, and every request looks like a brand-new
+# visitor. app/main.py detects "*" and disables credentials rather than shipping
+# a combination that cannot work.
+CORS_ALLOWED_ORIGINS=http://localhost:5173,https://campusagent.vercel.app
+
+# Vercel gives every PREVIEW deployment a unique host. Without this, previews
+# break — and they break as a 404 on the run, not a CORS error, because the
+# cookie is simply never sent. Anchored: an unanchored pattern would match
+# evil-campusagent.vercel.app.attacker.com
+CORS_ALLOWED_ORIGIN_REGEX=^https://campusagent-[a-z0-9-]+\.vercel\.app$
 
 # --- Optional ---------------------------------------------------------------
 TAVILY_API_KEY=

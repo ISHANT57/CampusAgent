@@ -81,6 +81,10 @@ if _wildcard and settings.cors_origins != ["*"]:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Vercel preview deployments get a unique host each time, so an exact
+    # allow-list breaks every preview — and it fails as a 404 on the run
+    # rather than a CORS error, because the cookie is simply never sent.
+    allow_origin_regex=settings.cors_allowed_origin_regex or None,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Last-Event-ID"],
     allow_credentials=not _wildcard,
