@@ -25,7 +25,7 @@ from app.agent import prompts
 from app.agent.selector import Decision, Outcome, next_action
 from app.core.budget import BudgetState, RunBudget
 from app.llm.base import LLMProvider, Message
-from app.llm.gemini import GeminiProvider
+from app.llm.manager import Mode, ResolvedProvider, RunContext, resolve
 from app.models.run import Run, RunStatus
 from app.models.step import StepKind
 from app.repositories.run_repository import RunRepository
@@ -64,23 +64,43 @@ def run_agent(
     db: Session,
     goal: str,
     *,
+    context: RunContext | None = None,
     provider: LLMProvider | None = None,
     registry: ToolRegistry | None = None,
     budget: RunBudget | None = None,
     session_id: str | None = None,
+    quota_check=None,
     on_step=None,
 ) -> RunResult:
     """Execute one goal to completion.
 
-    `on_step(kind, payload)` is an optional callback so a caller (the CLI) can
-    render the trace live. It is not an event system — one function, called
-    synchronously, which is all live rendering actually needs.
+    Provider selection is delegated to the Provider Manager. This function
+    receives an LLMProvider and a budget and cannot tell whether a hosted trial
+    key or the user's own key paid for the run — which is the whole point of
+    llm/manager.py being the single gated path to hosted credentials.
+
+    `provider` is still accepted so tests can inject a scripted fake without
+    going through resolution. When it is passed, `context` is ignored.
+
+    `on_step(kind, payload)` lets a caller render the trace live. Not an event
+    system — one function, called synchronously, which is all live rendering
+    needs.
     """
-    provider = provider or GeminiProvider()
     if registry is None:
         from app.tools import registry as default_registry
 
         registry = default_registry
+
+    resolved: ResolvedProvider | None = None
+    if provider is None:
+        # May raise NoProviderAvailable — deliberately BEFORE the run row is
+        # created. A refusal ("you are out of trial runs", "your key is
+        # invalid") is not a failed run; recording it as one would corrupt the
+        # success-rate metric with things the agent never attempted.
+        resolved = resolve(context or RunContext(mode=Mode.TRIAL), quota_check=quota_check)
+        provider = resolved.provider
+        budget = budget or resolved.budget
+
     budget = budget or RunBudget.from_settings()
 
     repo = RunRepository(db)
@@ -89,7 +109,13 @@ def run_agent(
     # web may have changed since the last one.
     executor.reset()
 
-    run = repo.create(goal, session_id=session_id)
+    run = repo.create(
+        goal,
+        session_id=session_id,
+        mode=resolved.mode.value if resolved else None,
+        provider_name=resolved.provider_name if resolved else getattr(provider, "name", None),
+        model=resolved.model if resolved else getattr(provider, "model", None),
+    )
     repo.start(run)
 
     messages: list[Message] = prompts.initial_messages(goal)
@@ -103,7 +129,13 @@ def run_agent(
         if on_step:
             on_step(kind, payload)
 
-    emit("goal", {"goal": goal, "run_id": run.id})
+    emit("goal", {
+        "goal": goal,
+        "run_id": run.id,
+        # Surfaced so a trace is self-explanatory: token counts and latency are
+        # inexplicable without knowing which model produced them.
+        "provider": resolved.label if resolved else getattr(provider, "model", "injected"),
+    })
 
     while True:
         state = budget.check()

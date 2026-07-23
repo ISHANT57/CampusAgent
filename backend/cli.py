@@ -59,18 +59,76 @@ def _render(kind: str, payload: dict) -> None:
         console.print(Panel(payload["answer"], title="answer", border_style="green"))
 
 
+def _key_from_env(name: str) -> str:
+    """Look up a BYOK key from the real environment, falling back to .env.
+
+    pydantic-settings READS .env but does not export it to os.environ, and
+    per-provider keys are deliberately not Settings fields — adding one field
+    per provider would defeat the point of providers being catalogue data.
+    This is CLI convenience only; the API layer will take keys from the
+    request, never from a file.
+    """
+    import os
+    import pathlib
+    import re
+
+    if value := os.getenv(name):
+        return value
+
+    env_file = pathlib.Path(__file__).parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if m := re.match(rf"^{re.escape(name)}=(.*)$", line.strip()):
+                return m.group(1).strip()
+    return ""
+
+
+def _context(args: argparse.Namespace):
+    """Build a RunContext from CLI flags.
+
+    `--provider` means BYOK — you supplied the key. Without it the CLI runs in
+    trial mode against the hosted key, which is what a first-time user gets.
+    """
+    from app.llm.manager import ByokConfig, Mode, RunContext
+
+    if not args.provider:
+        return RunContext(mode=Mode.TRIAL, identity="cli")
+
+    key = args.api_key or _key_from_env(f"{args.provider.upper()}_API_KEY")
+    return RunContext(
+        mode=Mode.BYOK,
+        identity="cli",
+        byok=ByokConfig(
+            provider=args.provider, api_key=key, model=args.model, base_url=args.base_url
+        ),
+    )
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from app.agent.loop import run_agent
     from app.core.budget import RunBudget
     from app.core.database import SessionLocal
+    from app.llm.manager import NoProviderAvailable
 
-    budget = RunBudget.from_settings()
+    budget = None
     if args.max_steps:
+        budget = RunBudget.from_settings()
         budget.max_steps = args.max_steps
 
     db = SessionLocal()
     try:
-        result = run_agent(db, args.goal, budget=budget, on_step=None if args.quiet else _render)
+        result = run_agent(
+            db, args.goal,
+            context=_context(args),
+            budget=budget,
+            on_step=None if args.quiet else _render,
+        )
+    except NoProviderAvailable as e:
+        # A refusal, not a failed run. The reason distinguishes "you are out of
+        # trial runs" (a conversion moment) from "your key is invalid" (a
+        # fix-it moment) — the UI renders them very differently.
+        console.print(f"[red]{e}[/]  [dim]({e.reason})[/]")
+        return 2
     finally:
         db.close()
 
@@ -193,6 +251,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Run the agent against one goal.")
     p_run.add_argument("goal", help="What you want the agent to accomplish.")
     p_run.add_argument("--max-steps", type=int, default=None, help="Override the step budget.")
+    p_run.add_argument("--provider", default=None,
+                       help="BYOK provider: gemini, groq, openrouter, ollama, ... (omit for trial mode)")
+    p_run.add_argument("--model", default=None, help="Model id (default: the catalogue's).")
+    p_run.add_argument("--api-key", default=None,
+                       help="Defaults to <PROVIDER>_API_KEY from the environment.")
+    p_run.add_argument("--base-url", default=None, help="For custom or Ollama endpoints.")
     p_run.add_argument("-q", "--quiet", action="store_true", help="Only print the final answer.")
     p_run.set_defaults(func=cmd_run)
 

@@ -31,12 +31,29 @@ class RunRepository:
 
     # -- runs ---------------------------------------------------------------
 
-    def create(self, goal: str, session_id: str | None = None) -> Run:
+    def create(
+        self,
+        goal: str,
+        session_id: str | None = None,
+        *,
+        mode: str | None = None,
+        provider_name: str | None = None,
+        model: str | None = None,
+        identity: str | None = None,
+    ) -> Run:
+        # Recording which provider and model served the run makes a trace
+        # self-explanatory. Token counts and latency are otherwise
+        # inexplicable — a 6-second step means something different on
+        # gpt-oss-20b than on flash-lite.
         run = Run(
             tenant_id=self.tenant_id,
             goal=goal,
             session_id=session_id,
             status=RunStatus.CREATED.value,
+            mode=mode,
+            provider_name=provider_name,
+            model=model,
+            identity=identity,
         )
         self.db.add(run)
         self.db.commit()

@@ -36,4 +36,16 @@ E3/E4 format compliance + selection (12 goals x 2)
   llama-3.1-8b-instant  reached 9/24  format 88.9%  selection 100.0%  {'OK': 8,
 'API_ERROR': 15, 'MULTI_CALL': 1}
 
-..
+................xxx..x..
+  openai/gpt-oss-20b  reached 20/24  format 100.0%  selection 90.0%  {'OK': 20,
+'API_ERROR': 4}
+
+........x.xx.x.xx.x.xx.x
+  qwen/qwen3.6-27b  reached 14/24  format 100.0%  selection 100.0%  {'OK': 14, 
+'API_ERROR': 10}
+
+E5 multi-turn (HARD GATE)
+  llama-3.3-70b-versatile                SKIP turn 2 400
+  llama-3.1-8b-instant                   WEAK calculator -> knowledge_search
+  openai/gpt-oss-20b                     SKIP turn 2 400
+  qwen/qwen3.6-27b                       PASS knowledge_search -> calculator

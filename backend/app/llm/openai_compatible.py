@@ -31,18 +31,34 @@ from app.llm.base import (
     Usage,
 )
 
-# Substrings marking a failure as structural rather than temporary. M0/F2: two
-# 429s can mean opposite things, and only the body distinguishes them.
-# "free-models-per-day" is OpenRouter's daily cap — retrying before midnight UTC
-# cannot succeed, so it must not be treated as transient.
-_PERMANENT_MARKERS = (
+# Classification is by machine-readable `code` FIRST, prose only as a fallback.
+#
+# Why: a live Groq run failed because its 429 message ends with an upsell —
+# "Upgrade to Dev Tier today at https://console.groq.com/settings/billing" —
+# and a prose marker of "billing" matched it. A transient per-minute rate limit
+# was classified permanent, and the run died instead of backing off.
+#
+# Substring matching on vendor prose is fragile in both directions: it misses
+# rewording, and it matches incidental words in URLs and upsells. Codes are
+# stable; prose is marketing.
+_TRANSIENT_CODES = frozenset({
+    "rate_limit_exceeded", "server_error", "service_unavailable",
+    "overloaded_error", "engine_overloaded",
+})
+_PERMANENT_CODES = frozenset({
+    "invalid_api_key", "authentication_error", "permission_error",
+    "model_not_found", "insufficient_quota", "invalid_request_error",
+})
+# Prose fallback, only for providers that send no code. Kept narrow and
+# specific — no bare words that could appear in a support URL.
+# "free-models-per-day" is OpenRouter's daily cap: retrying before midnight UTC
+# cannot succeed, so despite being a 429 it is permanent (M0/F5).
+_PERMANENT_PHRASES = (
     "free-models-per-day",
     "invalid api key",
     "incorrect api key",
     "no such model",
-    "does not exist",
     "insufficient_quota",
-    "billing",
 )
 
 
@@ -114,22 +130,54 @@ class OpenAICompatibleProvider:
     # -- errors -------------------------------------------------------------
 
     def _raise_for_error(self, response: httpx.Response) -> None:
+        code = ""
         try:
             payload = response.json()
             error = payload.get("error") or {}
             detail = str(error.get("message") or payload.get("detail") or response.text[:300])
+            # Machine-readable and stable, unlike the message text.
+            code = str(error.get("code") or error.get("type") or "").lower()
             # OpenRouter nests the upstream provider's real message here, and
             # it is where the daily-cap wording actually appears.
             metadata = error.get("metadata") or {}
             if metadata.get("raw"):
                 detail = f"{detail} | {metadata['raw']}"
+            if code:
+                detail = f"{code}: {detail}"
         except Exception:
             detail = response.text[:300]
 
         kwargs = {"provider": self.name, "model": self.model, "status": response.status_code}
         lowered = detail.lower()
 
-        if any(marker in lowered for marker in _PERMANENT_MARKERS):
+        # Groq validates tool arguments SERVER-SIDE and rejects bad ones with
+        # HTTP 400 `tool_use_failed`:
+        #
+        #   "/top_k: expected integer, but got string"
+        #   "Failed to parse tool call arguments as JSON"
+        #
+        # Measured in P0. This is a FORMAT failure wearing a transport error's
+        # clothes. Falling through to the 4xx branch below would classify it
+        # permanent and abandon a run that one repair prompt would fix — the
+        # M0/F2 lesson in a new disguise.
+        #
+        # Groq also returns `failed_generation`, which is exactly the text a
+        # repair prompt needs, so it is carried on the exception.
+        if code == "tool_use_failed" or any(
+            m in lowered for m in ("tool call validation failed", "failed to parse tool call")
+        ):
+            raise LLMParseError(
+                f"{self.name} rejected the model's tool call: {detail[:220]}", **kwargs
+            )
+
+        # Code first — it is stable. Prose is a fallback for providers that
+        # send none, and the phrases are narrow enough not to match a URL.
+        if code in _TRANSIENT_CODES:
+            raise LLMTransientError(f"{self.name} {response.status_code}: {detail[:220]}", **kwargs)
+        if code in _PERMANENT_CODES:
+            raise LLMPermanentError(f"{self.name} {response.status_code}: {detail[:220]}", **kwargs)
+
+        if any(phrase in lowered for phrase in _PERMANENT_PHRASES):
             raise LLMPermanentError(f"{self.name} {response.status_code}: {detail[:220]}", **kwargs)
         if response.status_code == 429 or response.status_code >= 500:
             raise LLMTransientError(f"{self.name} {response.status_code}: {detail[:220]}", **kwargs)

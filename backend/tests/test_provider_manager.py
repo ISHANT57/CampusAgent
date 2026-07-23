@@ -328,9 +328,68 @@ def test_openrouter_daily_cap_is_permanent_not_transient():
         }}))
 
 
+def test_groq_tool_use_failed_is_a_parse_error_not_permanent():
+    """Found by the P0 Groq probe.
+
+    Groq validates tool arguments server-side and rejects bad ones with HTTP
+    400 `tool_use_failed` — a FORMAT failure wearing a transport error's
+    clothes. Classifying it permanent (the default for 4xx) would abandon a run
+    that one repair prompt would fix. M0/F2 in a new disguise.
+    """
+    with pytest.raises(LLMParseError):
+        _provider()._raise_for_error(_resp(400, {"error": {
+            "code": "tool_use_failed",
+            "message": "tool call validation failed: parameters for tool knowledge_search "
+                       "did not match schema: errors: [`/top_k`: expected integer, but got string]",
+        }}))
+
+
+def test_groq_unparseable_tool_arguments_is_also_a_parse_error():
+    with pytest.raises(LLMParseError):
+        _provider()._raise_for_error(_resp(400, {"error": {
+            "code": "tool_use_failed",
+            "message": "Failed to parse tool call arguments as JSON",
+        }}))
+
+
+def test_an_ordinary_400_is_still_permanent():
+    # The parse-error branch must not swallow genuine bad requests.
+    with pytest.raises(LLMPermanentError):
+        _provider()._raise_for_error(_resp(400, {"error": {"message": "model not found"}}))
+
+
 def test_ordinary_429_is_transient():
     with pytest.raises(LLMTransientError):
         _provider()._raise_for_error(_resp(429, {"error": {"message": "slow down"}}))
+
+
+def test_a_rate_limit_whose_message_mentions_billing_is_still_transient():
+    """REGRESSION, found by a live Groq run.
+
+    Groq's per-minute rate limit ends with an upsell:
+      "Upgrade to Dev Tier today at https://console.groq.com/settings/billing"
+
+    A prose marker of "billing" matched it, so a transient TPM limit was
+    classified permanent and the run died instead of backing off. Codes are
+    stable; prose is marketing.
+    """
+    with pytest.raises(LLMTransientError):
+        _provider()._raise_for_error(_resp(429, {"error": {
+            "code": "rate_limit_exceeded",
+            "message": (
+                "Rate limit reached for model `llama-3.3-70b-versatile` on tokens per "
+                "minute (TPM): Limit 12000, Used 6784, Requested 7346. Need more tokens? "
+                "Upgrade to Dev Tier today at https://console.groq.com/settings/billing"
+            ),
+        }}))
+
+
+def test_machine_code_wins_over_prose():
+    # An explicit permanent code must not be overridden by a benign message.
+    with pytest.raises(LLMPermanentError):
+        _provider()._raise_for_error(_resp(429, {"error": {
+            "code": "insufficient_quota", "message": "please try again later",
+        }}))
 
 
 def test_invalid_key_is_permanent():

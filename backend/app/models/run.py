@@ -71,6 +71,15 @@ class Run(Base):
 
     goal: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # Which provider served this run. Nullable because runs predating the
+    # Provider Manager have none, and because a test may inject a fake.
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)          # trial | byok
+    provider_name: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Trial quota is counted against this. Deliberately not a user id — trial
+    # mode requires no signup.
+    identity: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # Stored as a plain string rather than a Postgres ENUM. Adding a status to
     # a native enum needs ALTER TYPE, which does not run inside a transaction
     # on older Postgres and complicates rollback. A CHECK-free varchar plus the
