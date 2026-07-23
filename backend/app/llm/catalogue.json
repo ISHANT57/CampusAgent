@@ -1,0 +1,151 @@
+{
+  "_about": [
+    "Provider definitions as DATA, not code.",
+    "",
+    "Eight providers, three wire formats. Adding Together, Fireworks, DeepSeek or",
+    "Cerebras is one entry here. Adding a genuinely different protocol (Cohere's",
+    "native API, say) needs a new adapter — that is the honest boundary of",
+    "'configuration, not code': config covers new VENDORS, not new PROTOCOLS.",
+    "",
+    "supports_tools is MANDATORY per model. M0/E2 found models that accept a",
+    "`tools` parameter and silently ignore it; the agent then appears to refuse",
+    "every task with no error anywhere. Models without it are never offered.",
+    "",
+    "blurb is shown in the UI and must be HONEST about limits. A user who picks",
+    "OpenRouter expecting unlimited use will hit its cap in a few runs and",
+    "conclude the app is broken."
+  ],
+
+  "providers": {
+    "gemini": {
+      "adapter": "gemini",
+      "label": "Gemini",
+      "blurb": "Generous free tier, fast. Recommended.",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "auth": "header:x-goog-api-key",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://aistudio.google.com/apikey",
+      "default_model": "gemini-3.1-flash-lite",
+      "models": [
+        {"id": "gemini-3.1-flash-lite", "label": "3.1 Flash Lite", "supports_tools": true,
+         "notes": "M0: 100% format compliance over 36/36, never hit a quota wall"},
+        {"id": "gemini-2.5-flash", "label": "2.5 Flash", "supports_tools": true,
+         "notes": "M0: 100% format and selection, but on a 13-call sample"},
+        {"id": "gemini-3.5-flash", "label": "3.5 Flash", "supports_tools": true},
+        {"id": "gemini-flash-lite-latest", "label": "Flash Lite (latest)", "supports_tools": true}
+      ]
+    },
+
+    "groq": {
+      "adapter": "openai_compatible",
+      "label": "Groq",
+      "blurb": "Very fast. Free tier limits measured in P0.",
+      "base_url": "https://api.groq.com/openai/v1",
+      "auth": "bearer",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://console.groq.com/keys",
+      "default_model": "llama-3.3-70b-versatile",
+      "models": [
+        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B", "supports_tools": true},
+        {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B", "supports_tools": true},
+        {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B", "supports_tools": true},
+        {"id": "qwen/qwen3.6-27b", "label": "Qwen 3.6 27B", "supports_tools": true}
+      ]
+    },
+
+    "openrouter": {
+      "adapter": "openai_compatible",
+      "label": "OpenRouter",
+      "blurb": "Many models. Free tier is about 50 requests/day — roughly 20 agent runs.",
+      "base_url": "https://openrouter.ai/api/v1",
+      "auth": "bearer",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://openrouter.ai/keys",
+      "default_model": "openai/gpt-oss-20b:free",
+      "models": [
+        {"id": "openai/gpt-oss-20b:free", "label": "GPT-OSS 20B (free)", "supports_tools": true,
+         "notes": "M0: 97.2% format, 91.4% selection, but 6.1s median latency"},
+        {"id": "nvidia/nemotron-3-super-120b-a12b:free", "label": "Nemotron 3 Super (free)", "supports_tools": true}
+      ]
+    },
+
+    "github_models": {
+      "adapter": "openai_compatible",
+      "label": "GitHub Models",
+      "blurb": "Free with a GitHub account. Use a personal access token as the key.",
+      "base_url": "https://models.inference.ai.azure.com",
+      "auth": "bearer",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://github.com/settings/tokens",
+      "default_model": "gpt-4o-mini",
+      "models": [
+        {"id": "gpt-4o-mini", "label": "GPT-4o mini", "supports_tools": true},
+        {"id": "gpt-4o", "label": "GPT-4o", "supports_tools": true}
+      ]
+    },
+
+    "openai": {
+      "adapter": "openai_compatible",
+      "label": "OpenAI",
+      "blurb": "Paid. Most reliable tool calling.",
+      "base_url": "https://api.openai.com/v1",
+      "auth": "bearer",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://platform.openai.com/api-keys",
+      "default_model": "gpt-4o-mini",
+      "models": [
+        {"id": "gpt-4o-mini", "label": "GPT-4o mini", "supports_tools": true},
+        {"id": "gpt-4o", "label": "GPT-4o", "supports_tools": true}
+      ]
+    },
+
+    "anthropic": {
+      "adapter": "anthropic",
+      "label": "Anthropic",
+      "blurb": "Paid. Strong reasoning.",
+      "base_url": "https://api.anthropic.com/v1",
+      "auth": "header:x-api-key",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://console.anthropic.com/settings/keys",
+      "default_model": "claude-haiku-4-5-20251001",
+      "models": [
+        {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "supports_tools": true}
+      ]
+    },
+
+    "ollama": {
+      "adapter": "openai_compatible",
+      "label": "Ollama",
+      "blurb": "Runs on your own machine. No key, no limits, no cost.",
+      "base_url": "http://localhost:11434/v1",
+      "auth": "none",
+      "requires_key": false,
+      "allows_custom_base_url": true,
+      "requires_loopback": true,
+      "keys_url": "https://ollama.com/download",
+      "default_model": "llama3.1",
+      "models": [
+        {"id": "llama3.1", "label": "Llama 3.1", "supports_tools": true},
+        {"id": "qwen2.5", "label": "Qwen 2.5", "supports_tools": true}
+      ]
+    },
+
+    "custom": {
+      "adapter": "openai_compatible",
+      "label": "Custom endpoint",
+      "blurb": "Any OpenAI-compatible API. You supply the URL and model.",
+      "base_url": null,
+      "auth": "bearer",
+      "requires_key": true,
+      "allows_custom_base_url": true,
+      "default_model": null,
+      "models": []
+    }
+  }
+}

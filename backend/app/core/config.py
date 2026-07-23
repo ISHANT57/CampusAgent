@@ -87,6 +87,44 @@ class Settings(BaseSettings):
     max_wall_clock_seconds: int = Field(default=300, ge=10)
     max_calls_per_tool: int = Field(default=4, ge=1)
 
+    # -- Hosted trial --------------------------------------------------------
+    # Reachable ONLY through Mode.TRIAL in llm/manager.py. Rule 2 of
+    # PROVIDER_ARCHITECTURE.md: a BYOK failure never falls back to these.
+    #
+    # Free -> paid is these values plus the trial limits below. No code change:
+    # the adapter is chosen from catalogue.json by provider name.
+    hosted_provider: str = "gemini"          # gemini | openrouter | groq
+    hosted_model: str = ""                   # blank = the catalogue default
+    # SEPARATE key from the development one. Quotas are per-model PER KEY
+    # (M0/F6), so a shared key means a demo day exhausts what you build with —
+    # and you find out mid-run.
+    hosted_api_key: str = ""
+
+    # -- Trial limits (raise these when upgrading to a paid hosted plan) ------
+    trial_runs_per_identity: int = Field(default=2, ge=0)
+    trial_runs_per_ip: int = Field(default=20, ge=0)
+    # Keep BELOW the vendor's own limit, so we hit OUR ceiling first and fail
+    # with a message we wrote rather than a 429 mid-run.
+    trial_global_daily_runs: int = Field(default=100, ge=0)
+    trial_max_steps: int = Field(default=4, ge=1)
+    trial_max_tokens: int = Field(default=25_000, ge=1000)
+    # web_search also costs Tavily quota (1,000/month free). knowledge_search
+    # and calculator are also the honest demo — they are what makes this
+    # visibly different from a chatbot.
+    trial_tools: str = "knowledge_search,calculator"
+
+    # -- BYOK ----------------------------------------------------------------
+    byok_session_ttl_minutes: int = 120
+    byok_allow_custom_base_url: bool = True
+    # Ollama needs http://localhost:11434. Safe only when the app runs on the
+    # user's own machine — in a hosted deploy there is no user machine, so this
+    # MUST stay false in production. See llm/url_guard.py.
+    byok_allow_loopback: bool = False
+
+    @property
+    def trial_tool_names(self) -> list[str]:
+        return [t.strip() for t in self.trial_tools.split(",") if t.strip()]
+
     # -- Tenancy -------------------------------------------------------------
     # Single-tenant today. tenant_id is carried through every table and query
     # from M4 so multi-tenancy later changes resolve_tenant() and nothing else.

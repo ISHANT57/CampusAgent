@@ -1,0 +1,39 @@
+P0 — Groq probe  models=['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 
+'openai/gpt-oss-20b', 'qwen/qwen3.6-27b']  trials=2
+
+E1/E2 connectivity and native tool-call support
+  llama-3.3-70b-versatile                NATIVE -> ['knowledge_search']  375ms 
+1497+20tok
+    {'x-ratelimit-limit-requests': '1000', 'x-ratelimit-limit-tokens': '12000',
+'x-ratelimit-remaining-requests': '999', 'x-ratelimit-remaining-tokens': 
+'9991', 'x-ratelimit-reset-requests': '1m26.4s', 'x-ratelimit-reset-tokens': 
+'10.045s'}
+  llama-3.1-8b-instant                   NATIVE -> ['knowledge_search']  259ms 
+1497+28tok
+    {'x-ratelimit-limit-requests': '14400', 'x-ratelimit-limit-tokens': '6000',
+'x-ratelimit-remaining-requests': '14399', 'x-ratelimit-remaining-tokens': 
+'3991', 'x-ratelimit-reset-requests': '6s', 'x-ratelimit-reset-tokens': 
+'20.09s'}
+  openai/gpt-oss-20b                     NATIVE -> ['knowledge_search']  545ms 
+815+90tok
+    {'x-ratelimit-limit-requests': '1000', 'x-ratelimit-limit-tokens': '8000', 
+'x-ratelimit-remaining-requests': '999', 'x-ratelimit-remaining-tokens': 
+'6673', 'x-ratelimit-reset-requests': '1m26.4s', 'x-ratelimit-reset-tokens': 
+'9.952s'}
+  qwen/qwen3.6-27b                       NATIVE -> ['knowledge_search']  428ms 
+1218+119tok
+    {'x-ratelimit-limit-requests': '1000', 'x-ratelimit-limit-tokens': '8000', 
+'x-ratelimit-remaining-requests': '999', 'x-ratelimit-remaining-tokens': 
+'6270', 'x-ratelimit-reset-requests': '1m26.4s', 'x-ratelimit-reset-tokens': 
+'12.975s'}
+
+E3/E4 format compliance + selection (12 goals x 2)
+..........xxx..xxx.x..x.
+  llama-3.3-70b-versatile  reached 16/24  format 100.0%  selection 100.0%  
+{'OK': 16, 'API_ERROR': 8}
+
+....xxx.xxx.xx.xxx.xxxxx
+  llama-3.1-8b-instant  reached 9/24  format 88.9%  selection 100.0%  {'OK': 8,
+'API_ERROR': 15, 'MULTI_CALL': 1}
+
+..
