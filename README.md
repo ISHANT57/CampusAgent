@@ -53,20 +53,74 @@ change (`app/tools/knowledge.py`).
 process — no async runs, queues, workers, or approval flows. Those are deferred
 behind explicit triggers in [DEVELOPMENT_STRATEGY.md](DEVELOPMENT_STRATEGY.md).
 
-Provider decision frozen by M0: **`gemini-2.5-flash`** (100% format compliance,
-100% tool-selection accuracy across 180 scored calls).
+Provider frozen by M0, amended after M8: **`gemini-3.1-flash-lite`** — 100%
+format compliance over a full 36/36 sample, the only model to clear the
+multi-turn gate, and the only one that never hit a quota wall. See
+[spike/PROVIDER_EVALUATION.md](spike/PROVIDER_EVALUATION.md).
+
+## Baseline
+
+`python cli.py eval`, 2026-07-23, all dependencies live (Project 1 deployed on
+Render with service auth, Gemini, Tavily, Neon):
+
+| metric | value |
+|---|---|
+| success rate | **9/9 (100%)** |
+| tool selection accuracy | **9/9 (100%)** |
+| answer accuracy | **5/5 (100%)** |
+| mean step efficiency | 0.96 |
+| degraded runs | 0 |
+| total tokens | 31,962 |
+
+3 of 12 golden goals are skipped, not failed — they need tools that do not
+exist yet (`knowledge_list_documents`, `web_read`). Counting them against the
+agent would depress the score for a reason unrelated to its reasoning.
+
+An earlier run of the same suite, taken while Project 1 was undeployed, scored
+8/9 success and 0.72 efficiency with 6 degraded runs. The gap between the two
+is what `degraded runs` exists to make visible: a low score caused by a
+dependency outage is a different problem from one caused by bad reasoning, and
+a single averaged number hides both.
 
 ## Setup
 
 Python **3.12** — pinned in `backend/.python-version` and matched by the
-Dockerfile at M44. The default interpreter on the dev machine is 3.14, on which
-`pydantic-core` and `selectolax` have no wheels.
+Dockerfile at M44. The machine default is 3.14, on which `pydantic-core` and
+`selectolax` have no wheels.
 
-```bash
+```powershell
 cd backend
 uv venv --python 3.12 .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt
-cp .env.example .env      # then fill it in
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+copy .env.example .env      # then fill it in
+```
+
+**Activate the venv before running anything:**
+
+```powershell
+.\.venv\Scripts\Activate.ps1     # prompt gains a (.venv) prefix
+python cli.py eval
+```
+
+A bare `python cli.py ...` uses the system 3.14 interpreter, which has none of
+this project's dependencies and fails with `ModuleNotFoundError: No module
+named 'rich'`. Without activating, call the venv interpreter explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe cli.py eval
+```
+
+## Using the agent
+
+```powershell
+python cli.py run "What is the minimum CGPA to keep my scholarship?"
+python cli.py run "..." --max-steps 5 --quiet
+python cli.py tools          # tool descriptions, exactly as the model sees them
+python cli.py runs           # recent runs
+python cli.py trace 13       # replay a run's full reasoning trace
+python cli.py eval           # golden set + metrics
+python verify.py             # end-to-end checks incl. live model calls
+python -m pytest -q          # 157 offline tests
 ```
 
 ## Running the M0 spike
