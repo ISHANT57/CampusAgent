@@ -17,9 +17,23 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from dataclasses import dataclass, field
 
 GOLDEN_PATH = pathlib.Path(__file__).parent / "golden.json"
+
+# The [n] markers the system prompt asks for when citing retrieved sources.
+CITATION_MARKER = re.compile(r"\[\d+(?:\s*,\s*\d+)*\]")
+
+# Tools that return SOURCES, as opposed to computing an answer. Only an answer
+# built on one of these can meaningfully carry a citation.
+RETRIEVAL_TOOLS = frozenset({
+    "knowledge_search",
+    "knowledge_read_document",
+    "knowledge_list_documents",
+    "web_search",
+    "web_read",
+})
 
 
 def load_golden() -> list[dict]:
@@ -53,9 +67,11 @@ class GoalScore:
     steps: int
     min_steps: int
     answer_ok: bool | None             # None = nothing asserted
-    tools_unavailable: int
-    tokens: int
-    seconds: float
+    grounded: bool | None = None       # None = not scorable
+    grounded_detail: str = ""
+    tools_unavailable: int = 0
+    tokens: int = 0
+    seconds: float = 0.0
     answer: str | None = None
     error: str | None = None
 
@@ -99,6 +115,8 @@ def score_goal(goal: dict, result) -> GoalScore:
     needles = goal.get("answer_contains") or []
     answer_ok = all(n.lower() in answer.lower() for n in needles) if needles else None
 
+    grounded, grounded_detail = _check_grounding(goal, result, answer)
+
     unavailable = sum(
         1
         for s in result.trace
@@ -114,12 +132,61 @@ def score_goal(goal: dict, result) -> GoalScore:
         steps=result.steps,
         min_steps=goal.get("min_steps", 1),
         answer_ok=answer_ok,
+        grounded=grounded,
+        grounded_detail=grounded_detail,
         tools_unavailable=unavailable,
         tokens=result.prompt_tokens + result.completion_tokens,
         seconds=round(result.elapsed_seconds, 1),
         answer=result.answer,
         error=result.error,
     )
+
+
+def _check_grounding(goal: dict, result, answer: str) -> tuple[bool | None, str]:
+    """Is the answer supported by what the tools actually returned?
+
+    `answer_contains` alone is shallow: G01 passes if "6.5" appears anywhere,
+    which a model could produce from pretraining without reading the corpus at
+    all. That is exactly the failure this project exists to avoid — an
+    ungrounded answer that happens to be right today and silently wrong after
+    the policy changes.
+
+    Two checks, both cheap and both deterministic:
+
+      1. Every asserted fact must appear in some OBSERVATION, not only in the
+         answer. If the model states "6.5" and no tool ever returned "6.5",
+         it recalled it rather than retrieved it.
+      2. An answer drawing on retrieval should carry a [n] citation marker.
+
+    This is NOT semantic entailment — a paraphrase that drops the literal
+    string reads as ungrounded here. Real groundedness scoring is M42
+    (LLM-as-judge). This is the deterministic floor: it cannot prove an answer
+    is grounded, but it reliably catches one that is not.
+    """
+    needles = goal.get("answer_contains") or []
+    observations = [s for s in result.trace if s["kind"] == "observation"]
+    if not needles or not observations:
+        return None, "not scored"
+
+    corpus = " ".join(str((s.get("output") or {}).get("data", "")) for s in observations)
+    corpus += " " + " ".join(str((s.get("output") or {}).get("meta", "")) for s in observations)
+
+    missing = [n for n in needles if not _supported(n, corpus)]
+    if missing:
+        return False, f"stated but never retrieved: {missing}"
+
+    # A citation is only meaningful when there is a SOURCE to cite. G04
+    # ("what is 6.5 minus 6.2?") is answered by calculator alone — there is no
+    # document behind it, and demanding "[1]" would mark a perfectly grounded
+    # arithmetic answer as ungrounded. Second false positive from this check;
+    # the first was float formatting.
+    used_retrieval = any(
+        (s.get("tool_name") or s.get("tool")) in RETRIEVAL_TOOLS for s in observations
+    )
+    if used_retrieval and not CITATION_MARKER.search(answer):
+        return False, "drew on retrieved sources but gave no [n] citation"
+
+    return True, "supported by observations" + (", cited" if used_retrieval else "")
 
 
 @dataclass
@@ -145,6 +212,12 @@ class Report:
         return self._rate(lambda s: s.answer_ok)
 
     @property
+    def groundedness(self) -> tuple[int, int]:
+        """Of the answers that were right, how many were actually supported by
+        retrieved evidence rather than recalled from pretraining?"""
+        return self._rate(lambda s: s.grounded)
+
+    @property
     def mean_efficiency(self) -> float | None:
         vals = [s.efficiency for s in self.scores if s.efficiency is not None]
         return round(sum(vals) / len(vals), 2) if vals else None
@@ -167,16 +240,59 @@ class Report:
         sr, st = self.success
         tr, tt = self.tool_accuracy
         ar, at = self.answer_accuracy
+        gr, gt = self.groundedness
         return {
             "goals_scored": len(self.scores),
             "goals_skipped": len(self.skipped),
             "success_rate": _pct(sr, st),
             "tool_selection_accuracy": _pct(tr, tt),
             "answer_accuracy": _pct(ar, at),
+            "groundedness": _pct(gr, gt),
             "mean_step_efficiency": self.mean_efficiency,
             "degraded_runs": self.degraded_runs,
             "total_tokens": self.total_tokens,
         }
+
+
+_NUMBER = re.compile(r"-?\d+\.?\d*")
+
+
+def _supported(needle: str, corpus: str) -> bool:
+    """Is `needle` backed by something in the observations?
+
+    Substring first. Then, if the needle is numeric, a tolerant numeric match —
+    because a plain substring check produced FALSE POSITIVES on the first full
+    run: calculator returns 0.2999999999999998, the agent correctly reports
+    "0.3", and "0.3" is nowhere in the observation. The answer was perfectly
+    grounded; the check was too literal.
+
+    A metric that flags correct behaviour trains you to ignore it, which is
+    worse than not measuring at all.
+    """
+    if needle.lower() in corpus.lower():
+        return True
+
+    try:
+        target = float(needle)
+    except ValueError:
+        return False
+
+    # Tolerance covers float representation error and sensible rounding, and
+    # is relative so it scales with magnitude (0.3 vs 37535).
+    tolerance = max(abs(target) * 0.01, 1e-6)
+    return any(
+        abs(float(match) - target) <= tolerance
+        for match in _NUMBER.findall(corpus)
+        if _parses(match)
+    )
+
+
+def _parses(text: str) -> bool:
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
 
 
 def _pct(n: int, d: int) -> str:

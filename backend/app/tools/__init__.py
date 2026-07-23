@@ -17,6 +17,7 @@ from app.tools.registry import registry
 # Imported for side effects: each module's @registry.register decorator runs.
 from app.tools import calculator  # noqa: F401,E402
 from app.tools import knowledge  # noqa: F401,E402
+from app.tools import web_read  # noqa: F401,E402
 from app.tools import web_search  # noqa: F401,E402
 
 __all__ = ["registry"]

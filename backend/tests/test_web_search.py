@@ -158,7 +158,7 @@ def test_args_are_bounded():
 def test_registered_and_disambiguated_from_knowledge_search():
     from app.tools import registry
 
-    assert sorted(registry.names()) == ["calculator", "knowledge_search", "web_search"]
+    assert "web_search" in registry.names()
     d = registry.get("web_search").description
     # M0/F7: the description IS the selection algorithm. This one must actively
     # point the model back at knowledge_search for university questions, or the

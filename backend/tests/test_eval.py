@@ -193,6 +193,82 @@ def _score(**kw):
     return GoalScore(**{**base, **kw})
 
 
+def test_grounded_when_the_fact_came_from_an_observation():
+    goal = {"id": "G01", "expected_tool": "knowledge_search", "min_steps": 3, "answer_contains": ["6.5"]}
+    trace = _trace("knowledge_search")
+    trace[1]["output"]["data"] = [{"text": "maintain CGPA >= 6.5 to retain the scholarship"}]
+    s = score_goal(goal, FakeResult(trace, answer="You need a CGPA of 6.5 [1]."))
+    assert s.grounded is True
+
+
+def test_ungrounded_when_the_fact_was_never_retrieved():
+    """The gap `answer_contains` alone cannot see.
+
+    The model states 6.5 and it happens to be right — but no tool ever returned
+    it, so it was recalled from pretraining, not retrieved. Right today, and
+    silently wrong the moment the policy changes.
+    """
+    goal = {"id": "G01", "expected_tool": "knowledge_search", "min_steps": 3, "answer_contains": ["6.5"]}
+    trace = _trace("knowledge_search")
+    trace[1]["output"]["data"] = [{"text": "hostel timings are 6am to 9pm"}]
+    s = score_goal(goal, FakeResult(trace, answer="You need a CGPA of 6.5 [1]."))
+    assert s.answer_ok is True          # the shallow check still passes...
+    assert s.grounded is False          # ...but groundedness catches it
+    assert "never retrieved" in s.grounded_detail
+
+
+def test_numeric_facts_match_tolerantly_not_by_substring():
+    """REGRESSION from the first full eval.
+
+    calculator returns 0.2999999999999998; the agent correctly reports "0.3".
+    A plain substring check called that ungrounded — flagging correct behaviour,
+    which trains you to ignore the metric.
+    """
+    goal = {"id": "G04", "expected_tool": "calculator", "min_steps": 3, "answer_contains": ["0.3"]}
+    trace = _trace("calculator")
+    trace[1]["output"]["data"] = 0.2999999999999998
+    assert score_goal(goal, FakeResult(trace, answer="The difference is 0.3.")).grounded is True
+
+
+def test_calculator_only_answers_need_no_citation():
+    """Second false positive from the same check.
+
+    "What is 6.5 minus 6.2?" has no source to cite. Demanding "[1]" would mark
+    a perfectly grounded arithmetic answer as ungrounded.
+    """
+    goal = {"id": "G04", "expected_tool": "calculator", "min_steps": 3, "answer_contains": ["0.3"]}
+    trace = _trace("calculator")
+    trace[1]["output"]["data"] = 0.3
+    s = score_goal(goal, FakeResult(trace, answer="6.5 minus 6.2 is 0.3."))
+    assert s.grounded is True
+
+
+def test_ungrounded_when_the_answer_carries_no_citation():
+    goal = {"id": "G01", "expected_tool": "knowledge_search", "min_steps": 3, "answer_contains": ["6.5"]}
+    trace = _trace("knowledge_search")
+    trace[1]["output"]["data"] = [{"text": "CGPA >= 6.5"}]
+    s = score_goal(goal, FakeResult(trace, answer="You need a CGPA of 6.5."))
+    assert s.grounded is False
+    assert "citation" in s.grounded_detail
+
+
+def test_multi_number_citations_are_recognised():
+    goal = {"id": "G01", "expected_tool": "knowledge_search", "min_steps": 3, "answer_contains": ["6.5"]}
+    trace = _trace("knowledge_search")
+    trace[1]["output"]["data"] = [{"text": "CGPA >= 6.5"}]
+    s = score_goal(goal, FakeResult(trace, answer="A CGPA of 6.5 is required [1, 2, 3]."))
+    assert s.grounded is True
+
+
+def test_groundedness_is_unscored_without_assertions_or_observations():
+    goal = {"id": "G06", "expected_tool": "web_search", "min_steps": 3, "answer_contains": []}
+    assert score_goal(goal, FakeResult(_trace("web_search"), answer="x" * 50)).grounded is None
+
+    goal2 = {"id": "G04", "expected_tool": "calculator", "min_steps": 3, "answer_contains": ["0.3"]}
+    no_obs = [{"idx": 0, "kind": "final", "tool": None, "output": {}, "error": None}]
+    assert score_goal(goal2, FakeResult(no_obs, answer="0.3")).grounded is None
+
+
 def test_report_rates():
     r = Report(scores=[
         _score(completed=True, tool_correct=True, answer_ok=True),

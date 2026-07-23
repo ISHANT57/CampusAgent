@@ -53,6 +53,45 @@ class Passage(BaseModel):
         return f"[{index}] (document {self.document_id}, page {self.page_number}, score {self.score:.2f})\n{self.text}"
 
 
+class DocumentSummary(BaseModel):
+    """One entry in the corpus inventory. P2's own type."""
+
+    document_id: int
+    filename: str
+    status: str
+    page_count: int | None = None
+
+
+class DocumentText(BaseModel):
+    document_id: int
+    filename: str
+    page_count: int | None = None
+    pages: list[dict]
+
+    def render(self, max_chars: int = 20_000) -> str:
+        """Whole-document text for a prompt, page-labelled so the answer can
+        cite a page.
+
+        Truncated because the trace is re-sent on every subsequent turn — an
+        untruncated 30k-character document is paid for on every later step, not
+        once. The cut is announced rather than silent: an agent that does not
+        know it saw a partial document will confidently summarise a fragment.
+        """
+        out, used = [], 0
+        for page in self.pages:
+            block = f"[page {page['page_number']}]\n{page['text']}"
+            if used + len(block) > max_chars:
+                out.append(
+                    f"\n[TRUNCATED: {len(self.pages) - len(out)} of {len(self.pages)} pages omitted. "
+                    f"Use knowledge_read_document with a page range, or knowledge_search, "
+                    f"for the rest.]"
+                )
+                break
+            out.append(block)
+            used += len(block)
+        return "\n\n".join(out)
+
+
 class KnowledgeUnavailable(Exception):
     """P1 could not be reached or refused us. Distinct from 'P1 answered and
     found nothing' — the agent must not conclude the corpus lacks an answer
@@ -110,6 +149,82 @@ class KnowledgeClient:
                     f"Knowledge service rejected our credential ({response.status_code}). "
                     "Check KNOWLEDGE_BASE_API_KEY matches Project 1's SERVICE_API_KEY."
                 )
+            if response.status_code < 500 and response.status_code != 429:
+                raise KnowledgeUnavailable(
+                    f"Knowledge service returned {response.status_code}: {response.text[:200]}"
+                )
+
+            last_error = f"HTTP {response.status_code}"
+            if attempt == 0:
+                time.sleep(2)
+
+        raise KnowledgeUnavailable(f"Knowledge service failing ({last_error})")
+
+    def list_documents(self, status: str | None = None) -> list[DocumentSummary]:
+        body = self._get("/api/v1/documents", params={"status": status} if status else None)
+        out = []
+        for doc in body.get("documents", []):
+            try:
+                out.append(
+                    DocumentSummary(
+                        document_id=doc["id"],
+                        filename=doc["filename"],
+                        status=doc["status"],
+                        page_count=doc.get("page_count"),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    def read_document(
+        self, document_id: int, page_from: int | None = None, page_to: int | None = None
+    ) -> DocumentText:
+        params = {}
+        if page_from is not None:
+            params["page_from"] = page_from
+        if page_to is not None:
+            params["page_to"] = page_to
+        body = self._get(f"/api/v1/documents/{document_id}/text", params=params or None)
+        return DocumentText(
+            document_id=body["document_id"],
+            filename=body["filename"],
+            page_count=body.get("page_count"),
+            pages=body.get("pages", []),
+        )
+
+    def _get(self, path: str, params: dict | None = None) -> dict[str, Any]:
+        """Shared GET, with the same retry and error mapping as search()."""
+        last_error = ""
+        for attempt in range(2):
+            try:
+                response = self._client.get(
+                    f"{self.base_url}{path}",
+                    headers={"X-API-Key": self.api_key},
+                    params=params,
+                )
+            except httpx.HTTPError as e:
+                last_error = f"{type(e).__name__}: {e}"
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+                raise KnowledgeUnavailable(f"Knowledge service unreachable ({last_error})") from e
+
+            if response.status_code == 200:
+                return response.json()
+            if response.status_code in (401, 403):
+                raise KnowledgeUnavailable(
+                    f"Knowledge service rejected our credential ({response.status_code}). "
+                    "Check KNOWLEDGE_BASE_API_KEY matches Project 1's SERVICE_API_KEY."
+                )
+            if response.status_code == 404:
+                raise KnowledgeUnavailable(f"Not found: {path}")
+            if response.status_code == 413:
+                # The document is too large to return whole. Surfaced verbatim
+                # because P1's message names the fix (a page range), and that
+                # is exactly the instruction the agent needs.
+                detail = response.json().get("detail", "Document too large.")
+                raise KnowledgeUnavailable(str(detail))
             if response.status_code < 500 and response.status_code != 429:
                 raise KnowledgeUnavailable(
                     f"Knowledge service returned {response.status_code}: {response.text[:200]}"
@@ -205,4 +320,85 @@ def knowledge_search(args: KnowledgeSearchArgs) -> ToolResult:
         count=len(passages),
         query=args.query,
         rendered="\n\n".join(p.render(i) for i, p in enumerate(passages, start=1)),
+    )
+
+
+class ListDocumentsArgs(BaseModel):
+    status: str | None = Field(
+        default="processed",
+        description="Filter by processing status. 'processed' means searchable.",
+    )
+
+
+@registry.register(
+    # M0/F7, round two. The first version of this description ended with
+    # "...or to check whether the corpus covers a topic at all", and the very
+    # first full eval showed the model reaching for this tool on "Tell me about
+    # the fee structure" — it read that clause as an invitation to check
+    # coverage before searching. Tool selection fell from 12/12 to 11/12 on
+    # exactly the tool M0 predicted would cause trouble.
+    #
+    # The clause is gone, and the description now says explicitly what this
+    # tool is NOT for. Same lesson as "FIRST": a description that hints at
+    # ordering or gatekeeping wins goals it has no business winning.
+    description=(
+        "List the filenames and ids of documents in the university's knowledge "
+        "base. Use this only when the question is about the CATALOGUE itself — how "
+        "many documents exist, what they are called — or when you need a "
+        "document_id to pass to knowledge_read_document. It returns no document "
+        "content and cannot answer questions about policies, fees, rules or any "
+        "other subject matter; use knowledge_search for those."
+    ),
+    timeout_s=65.0,
+)
+def knowledge_list_documents(args: ListDocumentsArgs) -> ToolResult:
+    try:
+        documents = get_client().list_documents(status=args.status)
+    except KnowledgeUnavailable as e:
+        return ToolResult.down(str(e))
+
+    if not documents:
+        return ToolResult.success([], count=0)
+
+    rendered = "\n".join(
+        f"- id={d.document_id} {d.filename} ({d.page_count or '?'} page(s), {d.status})"
+        for d in documents
+    )
+    return ToolResult.success(
+        [d.model_dump() for d in documents], count=len(documents), rendered=rendered
+    )
+
+
+class ReadDocumentArgs(BaseModel):
+    document_id: int = Field(
+        description="The document's id, obtained from knowledge_list_documents."
+    )
+    page_from: int | None = Field(default=None, description="Optional first page to read.")
+    page_to: int | None = Field(default=None, description="Optional last page to read.")
+
+
+@registry.register(
+    description=(
+        "Read the complete text of one document from the knowledge base, page by "
+        "page. Use this when you need full coverage of a document rather than "
+        "excerpts: summarising it, listing every rule it contains, or comparing it "
+        "in its entirety against another source. Requires a document_id, which "
+        "knowledge_list_documents provides. Returns the whole document, not "
+        "fragments. Accepts an optional page range for very long documents."
+    ),
+    timeout_s=65.0,
+)
+def knowledge_read_document(args: ReadDocumentArgs) -> ToolResult:
+    try:
+        document = get_client().read_document(
+            args.document_id, page_from=args.page_from, page_to=args.page_to
+        )
+    except KnowledgeUnavailable as e:
+        return ToolResult.down(str(e))
+
+    return ToolResult.success(
+        document.model_dump(),
+        count=len(document.pages),
+        filename=document.filename,
+        rendered=f"{document.filename} ({len(document.pages)} page(s)):\n\n{document.render()}",
     )

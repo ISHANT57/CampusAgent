@@ -201,7 +201,14 @@ def test_builtin_registry_contents():
 
     # The MVP vocabulary. No final_answer: the loop recognises completion when
     # the model stops requesting tools (see app/tools/__init__.py).
-    assert sorted(registry.names()) == ["calculator", "knowledge_search", "web_search"]
+    assert sorted(registry.names()) == [
+        "calculator",
+        "knowledge_list_documents",
+        "knowledge_read_document",
+        "knowledge_search",
+        "web_read",
+        "web_search",
+    ]
 
 
 def test_builtin_specs_are_gemini_translatable():

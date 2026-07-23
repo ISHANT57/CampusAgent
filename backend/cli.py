@@ -158,11 +158,14 @@ def cmd_eval(args: argparse.Namespace) -> int:
             s = payload["score"]
             tool = "[green]OK [/]" if s.tool_correct else "[red]X  [/]"
             ans = "" if s.answer_ok is None else (" ans:OK" if s.answer_ok else " [red]ans:X[/]")
+            gnd = "" if s.grounded is None else (" grounded" if s.grounded else " [red]UNGROUNDED[/]")
             degraded = " [yellow](degraded)[/]" if s.tools_unavailable else ""
             console.print(
                 f"      {tool} first={s.first_tool or '(none)'} want={s.expected_tool or '(none)'}"
-                f" steps={s.steps}/{s.min_steps}{ans}{degraded}"
+                f" steps={s.steps}/{s.min_steps}{ans}{gnd}{degraded}"
             )
+            if s.grounded is False:
+                console.print(f"        [red]{s.grounded_detail}[/]")
 
     report = run_golden(only=args.only, on_progress=progress)
 
