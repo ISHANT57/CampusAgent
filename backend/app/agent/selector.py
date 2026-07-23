@@ -20,6 +20,7 @@ from enum import Enum
 
 from app.llm.base import (
     LLMError,
+    LLMParseError,
     LLMPermanentError,
     LLMProvider,
     Message,
@@ -75,8 +76,33 @@ def next_action(
         # Bad key, retired model, structurally-zero quota. Retrying cannot
         # succeed and would burn the run's remaining budget (M0/F2).
         return Decision(outcome=Outcome.FAILED, error=f"LLM permanently unavailable: {e}")
+    except LLMParseError as e:
+        # A FORMAT failure, not an outage — the model answered, and what it
+        # produced could not be turned into a call. Some providers (Groq)
+        # validate tool arguments server-side and reject them with a 4xx; others
+        # return malformed JSON we fail to parse ourselves.
+        #
+        # Retrying the identical prompt reproduces the identical bad generation,
+        # which is exactly what used to happen: three retries, same failure,
+        # give up. The fix is a REPAIR turn — tell the model what was wrong and
+        # let it correct itself. This is M10's repair loop, which M0 deferred
+        # because native tool calling looked reliable; Groq's server-side
+        # validation is what made it necessary.
+        #
+        # Provider-agnostic on purpose: any provider that can produce a parse
+        # error gets the same treatment.
+        return Decision(
+            outcome=Outcome.RETRY,
+            error=(
+                "Your previous tool call was rejected because its arguments did not "
+                "match the tool's schema. Read the tool definition again and call it "
+                "with exactly the fields it declares, using the correct types — "
+                "numbers unquoted, strings quoted, and no invented parameters. "
+                f"The provider reported: {e}"
+            ),
+        )
     except LLMError as e:
-        # Transient — rate limit, 5xx, timeout. Worth another turn.
+        # Transient — rate limit, 5xx, timeout. Worth another turn unchanged.
         return Decision(outcome=Outcome.RETRY, error=f"LLM temporarily unavailable: {e}")
     except Exception as e:  # noqa: BLE001
         # The catch-all that makes "the loop never raises" actually true. A

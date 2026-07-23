@@ -12,6 +12,7 @@ from app.agent.selector import MIN_OPENING_ANSWER_CHARS, Outcome, next_action
 from app.core.budget import BudgetState, RunBudget
 from app.llm.base import (
     Completion,
+    LLMParseError,
     LLMPermanentError,
     LLMTransientError,
     Message,
@@ -287,3 +288,36 @@ def test_on_step_callback_receives_the_live_trace(db):
          on_step=lambda kind, payload: seen.append(kind))
     assert seen[0] == "goal"
     assert "tool_call" in seen and "observation" in seen and "final" in seen
+
+
+def test_a_rejected_tool_call_gets_a_repair_turn_not_a_blind_retry():
+    """REGRESSION from a live Groq run.
+
+    Groq validates tool arguments server-side and rejects bad ones with
+    `tool_use_failed`. That is a FORMAT failure, but it was caught as a generic
+    LLMError and reported as "temporarily unavailable" — so the loop retried
+    the identical prompt, got the identical bad generation, and gave up after
+    three attempts.
+
+    The retry now carries a repair instruction, so the model sees what was
+    wrong instead of guessing.
+    """
+    d = next_action(
+        ScriptedProvider([LLMParseError("groq rejected the tool call: /top_k expected integer")]),
+        _registry(),
+        [],
+    )
+    assert d.outcome is Outcome.RETRY
+    assert "temporarily unavailable" not in (d.error or "")
+    assert "schema" in (d.error or "").lower()
+    # The provider's own detail is quoted so the model can act on it.
+    assert "top_k" in (d.error or "")
+
+
+def test_a_run_recovers_from_a_rejected_tool_call(db):
+    result = _run(db, [
+        LLMParseError("rejected: /top_k expected integer, but got string"),
+        _call(text="ok"),
+        _answer("Recovered after correcting the arguments and completed the goal."),
+    ])
+    assert result.ok

@@ -166,9 +166,20 @@ class OpenAICompatibleProvider:
         if code == "tool_use_failed" or any(
             m in lowered for m in ("tool call validation failed", "failed to parse tool call")
         ):
-            raise LLMParseError(
-                f"{self.name} rejected the model's tool call: {detail[:220]}", **kwargs
-            )
+            # Groq returns what the model ACTUALLY generated. That is the most
+            # useful thing in the whole response: a repair prompt can quote it
+            # back so the model sees its own mistake instead of guessing.
+            # Discarding it was why retrying never worked — the same prompt
+            # produced the same malformed call.
+            failed = ""
+            try:
+                failed = str((response.json().get("error") or {}).get("failed_generation") or "")
+            except Exception:
+                pass
+            message = f"{self.name} rejected the model's tool call: {detail[:220]}"
+            if failed:
+                message += f" | it generated: {failed[:400]}"
+            raise LLMParseError(message, **kwargs)
 
         # Code first — it is stable. Prose is a fallback for providers that
         # send none, and the phrases are narrow enough not to match a URL.
