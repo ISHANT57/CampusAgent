@@ -78,9 +78,69 @@ def test_ip_hash_is_salted_and_not_reversible():
 
 # --- API --------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Every test shares one client, so counters would leak between them and
+    later tests would fail for a reason unrelated to what they assert.
+    Rate limiting itself is covered explicitly below."""
+    from app.core.rate_limit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+def test_creating_runs_is_rate_limited(client, fake_resolution):
+    """POST /runs is unauthenticated and starts LLM work.
+
+    Even in BYOK mode, where the caller pays for inference, a script can fill
+    the database, exhaust the connection pool, and monopolise the single
+    instance.
+    """
+    from app.core.rate_limit import RUN_CREATE_LIMIT
+
+    allowed = int(RUN_CREATE_LIMIT.split("/")[0])
+    codes = [
+        client.post("/api/v1/runs", json={"goal": f"run {i}"}).status_code
+        for i in range(allowed + 2)
+    ]
+    assert codes[:allowed] == [202] * allowed
+    assert 429 in codes[allowed:]
+
+
+def test_rate_limit_is_keyed_per_browser_not_per_ip(client, fake_resolution):
+    """Campus NAT: an IP-keyed limit would treat the whole university as one
+    caller — the exact failure Project 1 documented."""
+    from app.core.rate_limit import rate_limit_key
+    from app.core.identity import COOKIE_NAME, issue
+
+    class FakeRequest:
+        def __init__(self, cookies):
+            self.cookies = cookies
+
+    a, b = issue(), issue()
+    assert rate_limit_key(FakeRequest({COOKIE_NAME: a.token})).startswith("id:")
+    assert rate_limit_key(FakeRequest({COOKIE_NAME: a.token})) != rate_limit_key(
+        FakeRequest({COOKIE_NAME: b.token})
+    )
+
+
+def test_a_forged_cookie_falls_back_to_ip_rather_than_escaping_limits(monkeypatch):
+    # An attacker sending garbage must not be able to opt OUT of rate limiting.
+    from app.core.rate_limit import rate_limit_key
+    from app.core.identity import COOKIE_NAME
+
+    monkeypatch.setattr("app.core.rate_limit.get_remote_address", lambda r: "1.2.3.4")
+
+    class FakeRequest:
+        cookies = {COOKIE_NAME: "forged.123.badsignature"}
+
+    assert rate_limit_key(FakeRequest()) == "ip:1.2.3.4"
 
 
 @pytest.fixture

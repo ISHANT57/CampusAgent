@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.redaction import redact
 from app.models.run import Run, RunStatus
 from app.models.step import Step
 
@@ -87,8 +88,10 @@ class RunRepository:
         error: str | None = None,
     ) -> None:
         run.status = status.value
-        run.final_answer = answer
-        run.error = error
+        # The final answer is model-generated and the error often carries
+        # provider context — both can quote a credential.
+        run.final_answer = redact(answer) if answer else None
+        run.error = redact(error) if error else None
         run.finished_at = datetime.now(timezone.utc)
         self.db.commit()
 
@@ -124,15 +127,19 @@ class RunRepository:
         the (run_id, idx) unique constraint then turns a double-write into a
         database error instead of a duplicated line in the trace.
         """
+        # Redaction happens HERE, at the single write point, not at display.
+        # The display path is not the one that gets exported, dumped, or
+        # shipped to a log aggregator — redacting at render time leaves the
+        # secret sitting in Postgres, which is where a leak comes from.
         step = Step(
             run_id=run.id,
             tenant_id=self.tenant_id,
             idx=run.step_count,
             kind=kind,
             tool_name=tool_name,
-            input=input,
-            output=output,
-            error=error,
+            input=redact(input),
+            output=redact(output),
+            error=redact(error) if error else None,
             model=model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

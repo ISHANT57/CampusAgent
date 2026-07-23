@@ -22,7 +22,13 @@ next one, because the prompt is rebuilt from it. So resuming a dropped stream
 is `WHERE idx > n`, not a replay buffer.
 """
 
-from __future__ import annotations
+# NOTE: no `from __future__ import annotations` here, deliberately.
+# FastAPI resolves endpoint parameter types at runtime, and slowapi's
+# @limiter.limit wraps the handler — so under postponed evaluation the
+# annotations are strings that FastAPI tries to resolve against slowapi's
+# module namespace, where CreateRunRequest does not exist. Same failure class
+# as the Typer flag-binding bug in cli.py: a framework that introspects
+# annotations breaks when they are lazy.
 
 import asyncio
 import json
@@ -33,7 +39,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
-from app.core.identity import COOKIE_NAME, MAX_AGE_SECONDS, Identity, hash_ip, resolve_or_issue
+from app.core.identity import COOKIE_NAME, MAX_AGE_SECONDS, Identity, resolve_or_issue
+from app.core.rate_limit import RUN_CREATE_LIMIT, RUN_READ_LIMIT, limiter
 from app.llm.manager import ByokConfig, Mode, NoProviderAvailable, RunContext, resolve
 from app.models.run import RunStatus
 from app.repositories.run_repository import RunRepository
@@ -130,10 +137,13 @@ def current_identity(request: Request, response: Response) -> Identity:
 # --- endpoints --------------------------------------------------------------
 
 @router.post("", response_model=CreateRunResponse, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(RUN_CREATE_LIMIT)
 def create_run(
+    # `request` is required by slowapi's decorator, which reads it positionally
+    # — removing it breaks the limiter at import time, not at request time.
+    request: Request,
     payload: CreateRunRequest,
     background: BackgroundTasks,
-    request: Request,
     response: Response,
     identity: Identity = Depends(current_identity),
     db: Session = Depends(get_db),
@@ -238,7 +248,9 @@ def _owned_or_404(run, identity_key: str):
 
 
 @router.get("/{run_id}", response_model=RunView)
+@limiter.limit(RUN_READ_LIMIT)
 def get_run(
+    request: Request,
     run_id: int,
     identity: Identity = Depends(current_identity),
     db: Session = Depends(get_db),

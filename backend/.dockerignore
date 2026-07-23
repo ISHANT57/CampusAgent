@@ -1,0 +1,17 @@
+# Secrets must never enter the image — Render supplies them as environment
+# variables. An image is a distributable artifact; a key baked into one leaks
+# to anywhere the image goes.
+.env
+.env.*
+!.env.example
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Not needed at runtime, and they slow the build.
+tests/
+verify.py
+*.md
