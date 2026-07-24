@@ -42,7 +42,8 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.database import SessionLocal, get_db
-from app.core.identity import COOKIE_NAME, MAX_AGE_SECONDS, Identity, resolve_or_issue
+from app.api.v1.identity_dep import current_identity
+from app.core.identity import Identity
 from app.core.rate_limit import RUN_CREATE_LIMIT, RUN_READ_LIMIT, limiter
 from app.llm.manager import ByokConfig, Mode, NoProviderAvailable, RunContext, resolve
 from app.models.run import RunStatus
@@ -148,44 +149,6 @@ class RunView(BaseModel):
     steps: list[StepView]
 
 
-# --- identity ---------------------------------------------------------------
-
-def current_identity(request: Request, response: Response) -> Identity:
-    """Resolve the browser's identity, minting one if absent or tampered.
-
-    Set as a dependency rather than middleware so it is visible at every
-    endpoint that uses it — an implicit identity is one nobody remembers is
-    being counted against.
-    """
-    identity, is_new = resolve_or_issue(request.cookies.get(COOKIE_NAME))
-    if is_new:
-        # SameSite=None is REQUIRED for a cross-site deploy.
-        #
-        # The frontend is on vercel.app and the API on onrender.com — different
-        # registrable domains, so every request from the browser is CROSS-SITE.
-        # A Lax cookie is only sent on top-level navigation, never on a
-        # cross-site fetch or EventSource. With Lax, POST /runs created a run
-        # under one identity and the follow-up stream arrived with NO cookie,
-        # got a fresh identity, and 404'd on a run that was not "theirs".
-        #
-        # SameSite=None is only honoured with Secure, and Secure needs HTTPS —
-        # which is also why the app must see the real scheme behind Render's
-        # TLS terminator (uvicorn --proxy-headers, see the Dockerfile). Without
-        # that, this computes secure=False, the browser rejects the cookie
-        # outright, and the symptom is identical.
-        #
-        # Locally (localhost:5173 -> localhost:8000) it is same-site and plain
-        # HTTP, so Lax is correct there and None would be rejected.
-        cross_site = request.url.scheme == "https"
-        response.set_cookie(
-            COOKIE_NAME,
-            identity.token,
-            max_age=MAX_AGE_SECONDS,
-            httponly=True,     # not readable by page scripts
-            samesite="none" if cross_site else "lax",
-            secure=cross_site,
-        )
-    return identity
 
 
 # --- endpoints --------------------------------------------------------------

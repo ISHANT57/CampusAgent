@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, streamUrl } from "@/api/client";
+import { ensureIdentity } from "@/api/identity";
 import { TERMINAL, type RunStatus, type StreamStep, type StoredStep } from "@/api/types";
 
 /** Consecutive transport failures before abandoning SSE for polling.
@@ -97,9 +98,13 @@ export function useRunStream(runId: number | null): RunStreamState {
     setReconnecting(false);
     lastActivity.current = Date.now();
 
-    // withCredentials carries the identity cookie. Without it the stream is
-    // someone else's request and the backend returns 404.
-    const source = new EventSource(streamUrl(runId), { withCredentials: true });
+    // The stream URL carries the identity token as a query param (EventSource
+    // cannot send headers). Ensure the token exists BEFORE opening the stream —
+    // on a fresh browser profile it may not be in storage yet, and opening
+    // without it would 404. `cancelled` guards the async gap against a fast
+    // unmount or run change.
+    let source: EventSource | null = null;
+    let cancelled = false;
 
     const touch = () => {
       lastActivity.current = Date.now();
@@ -107,59 +112,67 @@ export function useRunStream(runId: number | null): RunStreamState {
       setReconnecting(false);
     };
 
-    source.addEventListener("run", (event) => {
-      touch();
-      const data = JSON.parse((event as MessageEvent).data);
-      setGoal(data.goal);
-      setProvider(data.provider);
-      setModel(data.model);
-      setStatus(data.status);
-    });
+    const wire = (src: EventSource) => {
+      src.addEventListener("run", (event) => {
+        touch();
+        const data = JSON.parse((event as MessageEvent).data);
+        setGoal(data.goal);
+        setProvider(data.provider);
+        setModel(data.model);
+        setStatus(data.status);
+      });
 
-    source.addEventListener("step", (event) => {
-      touch();
-      const step = JSON.parse((event as MessageEvent).data) as StreamStep;
-      setStatus("running");
-      setSteps((current) =>
-        // Guard against a duplicate after a reconnect. The backend resumes
-        // from Last-Event-ID so this should not happen, but a duplicated step
-        // in the timeline is a confusing bug to chase later.
-        current.some((s) => s.idx === step.idx) ? current : [...current, step],
-      );
-    });
+      src.addEventListener("step", (event) => {
+        touch();
+        const step = JSON.parse((event as MessageEvent).data) as StreamStep;
+        setStatus("running");
+        setSteps((current) =>
+          // Guard against a duplicate after a reconnect. The backend resumes
+          // from Last-Event-ID so this should not happen, but a duplicated step
+          // in the timeline is a confusing bug to chase later.
+          current.some((s) => s.idx === step.idx) ? current : [...current, step],
+        );
+      });
 
-    source.addEventListener("done", (event) => {
-      touch();
-      const data = JSON.parse((event as MessageEvent).data);
-      setStatus(data.status);
-      setAnswer(data.answer ?? null);
-      setError(data.error ?? null);
-      source.close();
-    });
+      src.addEventListener("done", (event) => {
+        touch();
+        const data = JSON.parse((event as MessageEvent).data);
+        setStatus(data.status);
+        setAnswer(data.answer ?? null);
+        setError(data.error ?? null);
+        src.close();
+      });
 
-    source.addEventListener("error", (event) => {
-      const raw = (event as MessageEvent).data;
-      if (raw) {
-        // An in-band error event from the server (run not found).
-        setError(JSON.parse(raw).message ?? "Stream error");
-        source.close();
-        return;
-      }
+      src.addEventListener("error", (event) => {
+        const raw = (event as MessageEvent).data;
+        if (raw) {
+          // An in-band error event from the server (run not found).
+          setError(JSON.parse(raw).message ?? "Stream error");
+          src.close();
+          return;
+        }
 
-      // No data means a transport-level failure, and EventSource deliberately
-      // hides the status code — a 404 and a dropped connection look identical
-      // here. It just keeps retrying, which is why a broken stream showed
-      // "resuming…" forever instead of failing.
-      //
-      // So: retry a few times (a real drop recovers), then give up on SSE and
-      // poll the run endpoint instead. That covers a genuinely failing stream
-      // AND the proxies that break event streams outright.
-      failures.current += 1;
-      setReconnecting(true);
-      if (failures.current >= MAX_STREAM_FAILURES) {
-        source.close();
-        startPolling();
-      }
+        // No data means a transport-level failure, and EventSource hides the
+        // status code — a 404 and a dropped connection look identical here. It
+        // just keeps retrying, which is why a broken stream showed "resuming…"
+        // forever. So: retry a few times (a real drop recovers), then give up
+        // on SSE and poll the run endpoint instead. That covers a genuinely
+        // failing stream AND the proxies that block event streams outright.
+        failures.current += 1;
+        setReconnecting(true);
+        if (failures.current >= MAX_STREAM_FAILURES) {
+          src.close();
+          startPolling();
+        }
+      });
+    };
+
+    // Ensure the token exists BEFORE opening the stream — on a fresh browser
+    // profile it may not be in storage yet, and opening without it would 404.
+    void ensureIdentity().then(() => {
+      if (cancelled) return;
+      source = new EventSource(streamUrl(runId), { withCredentials: true });
+      wire(source);
     });
 
     const ticker = window.setInterval(() => {
@@ -167,10 +180,11 @@ export function useRunStream(runId: number | null): RunStreamState {
     }, 250);
 
     return () => {
+      cancelled = true;
       window.clearInterval(ticker);
       if (pollTimer.current != null) window.clearInterval(pollTimer.current);
       pollTimer.current = null;
-      source.close();
+      source?.close();
     };
   }, [runId]);
 

@@ -1,3 +1,4 @@
+import { ensureIdentity, storedToken } from "./identity";
 import {
   ApiError,
   type CreateRunResponse,
@@ -26,6 +27,11 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
+
+  // The identity is sent as an explicit header, not left to a cookie the
+  // browser may block. ensureIdentity() fetches one on first use.
+  const token = await ensureIdentity();
+  headers.set("X-Identity", token);
 
   let response: Response;
   try {
@@ -90,6 +96,15 @@ export const api = {
     }),
 };
 
-/** The SSE endpoint URL. EventSource cannot send custom headers, so auth is
- *  the cookie — which is why withCredentials is set at the call site. */
-export const streamUrl = (runId: number) => `${BASE}/api/v1/runs/${runId}/events`;
+/** The SSE endpoint URL, with the identity token as a query parameter.
+ *
+ *  EventSource cannot send custom headers, so the token that other requests
+ *  pass in X-Identity has to ride in the URL here. By the time a run is
+ *  streamed it was already created (which called ensureIdentity), so the token
+ *  is in storage. The cookie is still sent via withCredentials as a fallback
+ *  where third-party cookies are allowed. */
+export const streamUrl = (runId: number) => {
+  const token = storedToken();
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `${BASE}/api/v1/runs/${runId}/events${query}`;
+};

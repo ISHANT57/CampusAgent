@@ -15,6 +15,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.health import router as health_router
+from app.api.v1.identity_dep import router as identity_router
 from app.api.v1.providers import router as providers_router
 from app.api.v1.runs import router as runs_router
 from app.core.config import get_settings
@@ -64,6 +65,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # silently breaks the deploy platform's polling.
 app.include_router(health_router)
 app.include_router(runs_router, prefix="/api/v1")
+app.include_router(identity_router, prefix="/api/v1")
 app.include_router(providers_router, prefix="/api/v1")
 
 # CORS. The identity cookie must survive a cross-origin browser client (a
@@ -86,6 +88,6 @@ app.add_middleware(
     # rather than a CORS error, because the cookie is simply never sent.
     allow_origin_regex=settings.cors_allowed_origin_regex or None,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Last-Event-ID"],
+    allow_headers=["Content-Type", "Last-Event-ID", "X-Identity"],
     allow_credentials=not _wildcard,
 )
