@@ -77,6 +77,12 @@ class Settings(BaseSettings):
 
     # -- Tools ---------------------------------------------------------------
     tavily_api_key: str = ""
+    # Optional. When set, web_read scrapes via Firecrawl (renders JavaScript,
+    # returns clean markdown) instead of the built-in raw-HTML fetcher. The
+    # built-in path returns an empty shell on client-rendered sites like
+    # sitare.org, which is the one URL a Sitare student is most likely to give.
+    # Unset = built-in fetcher, no dependency, no third-party quota.
+    firecrawl_api_key: str = ""
 
     # -- Run budget (M19) ----------------------------------------------------
     # Calibrated from M0's measured token and latency profile. Agent cost grows

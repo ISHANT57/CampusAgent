@@ -184,3 +184,76 @@ def test_registered_with_the_full_mvp_toolset():
         "web_read",
         "web_search",
     ]
+
+
+# --- Firecrawl backend (config-gated) ---------------------------------------
+
+def test_builtin_fetcher_is_used_when_no_firecrawl_key(monkeypatch):
+    from app.core.config import get_settings
+    import app.tools.web_read as wr
+
+    monkeypatch.setattr(get_settings(), "firecrawl_api_key", "")
+    monkeypatch.setattr(wr.socket, "getaddrinfo",
+                        lambda h, p: [(2, 1, 6, "", ("93.184.216.34", 0))])
+
+    called = {"builtin": False, "firecrawl": False}
+    monkeypatch.setattr(wr, "_fetch_builtin", lambda u, t=20.0: (called.__setitem__("builtin", True) or (u, "built-in text")))
+    monkeypatch.setattr(wr, "_fetch_via_firecrawl", lambda u, t: (called.__setitem__("firecrawl", True) or (u, "fc")))
+
+    wr.fetch("https://example.com/page")
+    assert called["builtin"] and not called["firecrawl"]
+
+
+def test_firecrawl_is_used_when_the_key_is_set(monkeypatch):
+    from app.core.config import get_settings
+    import app.tools.web_read as wr
+
+    monkeypatch.setattr(get_settings(), "firecrawl_api_key", "fc-test-key")
+    monkeypatch.setattr(wr.socket, "getaddrinfo",
+                        lambda h, p: [(2, 1, 6, "", ("93.184.216.34", 0))])
+
+    def handler(request):
+        assert request.headers.get("Authorization") == "Bearer fc-test-key"
+        body = httpx.Response(200, json={
+            "success": True,
+            "data": {"markdown": "# Rendered\nJS content here.",
+                     "metadata": {"sourceURL": "https://example.com/final"}},
+        })
+        return body
+
+    monkeypatch.setattr(wr.httpx, "post",
+                        lambda url, **kw: httpx.Client(transport=httpx.MockTransport(handler)).post(url, **kw))
+
+    final, text = wr.fetch("https://example.com/page")
+    assert final == "https://example.com/final"
+    assert "Rendered" in text
+
+
+def test_ssrf_is_enforced_before_firecrawl_is_ever_called(monkeypatch):
+    # A private address must be rejected by OUR guard, so Firecrawl is never
+    # even asked to fetch it — we do not become a proxy to the internal network.
+    from app.core.config import get_settings
+    import app.tools.web_read as wr
+
+    monkeypatch.setattr(get_settings(), "firecrawl_api_key", "fc-test-key")
+    called = {"firecrawl": False}
+    monkeypatch.setattr(wr, "_fetch_via_firecrawl", lambda u, t: called.__setitem__("firecrawl", True))
+
+    r = web_read(WebReadArgs(url="http://169.254.169.254/latest/meta-data/"))
+    assert r.ok is False
+    assert not called["firecrawl"]
+
+
+def test_firecrawl_quota_reads_as_unavailable_not_a_bad_url(monkeypatch):
+    from app.core.config import get_settings
+    import app.tools.web_read as wr
+
+    monkeypatch.setattr(get_settings(), "firecrawl_api_key", "fc-test-key")
+    monkeypatch.setattr(wr.socket, "getaddrinfo",
+                        lambda h, p: [(2, 1, 6, "", ("93.184.216.34", 0))])
+    monkeypatch.setattr(wr.httpx, "post",
+                        lambda url, **kw: httpx.Client(transport=httpx.MockTransport(
+                            lambda req: httpx.Response(429, json={"error": "rate limited"}))).post(url, **kw))
+
+    r = web_read(WebReadArgs(url="https://example.com/x"))
+    assert r.ok is False and r.unavailable is True

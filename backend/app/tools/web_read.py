@@ -36,6 +36,7 @@ import httpx
 from pydantic import BaseModel, Field
 from selectolax.parser import HTMLParser
 
+from app.core.config import get_settings
 from app.tools.base import ToolResult
 from app.tools.registry import registry
 
@@ -100,7 +101,69 @@ def extract_text(html: str) -> str:
 
 
 def fetch(url: str, timeout: float = 20.0) -> tuple[str, str]:
-    """Follow redirects MANUALLY, validating every hop. Returns (final_url, text).
+    """Read one URL. Returns (final_url, text).
+
+    Two backends, chosen by config and invisible to the agent — the same
+    pattern as the LLM providers:
+
+      Firecrawl (if FIRECRAWL_API_KEY is set)
+          Renders JavaScript and returns clean markdown. The built-in fetcher
+          below reads raw HTML, which is an empty shell on a client-rendered
+          site — and sitare.org is exactly that (a React/Vite app), so the one
+          URL a Sitare student is most likely to paste is the one the built-in
+          path fails on.
+
+      Built-in (httpx + selectolax)
+          No dependency, no third-party quota. Fine for server-rendered pages.
+
+    The entry URL is validated for BOTH paths. That is defence in depth for
+    Firecrawl — the request originates from THEIR servers, so the SSRF surface
+    is theirs, but validating first means we never even ask them to fetch a
+    private address, so the agent cannot be turned into a proxy to the internal
+    network via Firecrawl either.
+    """
+    current = validate_url(url)
+    if get_settings().firecrawl_api_key:
+        return _fetch_via_firecrawl(current, timeout)
+    return _fetch_builtin(current, timeout)
+
+
+def _fetch_via_firecrawl(url: str, timeout: float) -> tuple[str, str]:
+    """Scrape via Firecrawl, returning rendered markdown.
+
+    Firecrawl follows redirects on its own infrastructure, so the manual
+    per-hop revalidation the built-in path needs does not apply here — a
+    redirect into a private address hits Firecrawl's network, not ours.
+    """
+    key = get_settings().firecrawl_api_key
+    response = httpx.post(
+        "https://api.firecrawl.dev/v1/scrape",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={
+            "url": url,
+            "formats": ["markdown"],
+            # Strip nav/footer/ads server-side — the same noise extract_text
+            # removes for the built-in path, and where injected instructions
+            # most often hide.
+            "onlyMainContent": True,
+        },
+        # Firecrawl renders JS, so it is slower than a raw GET. Its own scrape
+        # can take a while; give it room but stay under the tool timeout.
+        timeout=max(timeout, 45.0),
+    )
+    response.raise_for_status()
+    body = response.json()
+    if not body.get("success", True):
+        raise UnsafeURL(f"Firecrawl could not read the page: {str(body.get('error'))[:160]}")
+
+    data = body.get("data") or {}
+    markdown = data.get("markdown") or ""
+    final = (data.get("metadata") or {}).get("sourceURL") or url
+    return final, markdown[:MAX_CONTENT_CHARS]
+
+
+def _fetch_builtin(url: str, timeout: float = 20.0) -> tuple[str, str]:
+    """Follow redirects MANUALLY, validating every hop.
 
     httpx's follow_redirects=True would validate only the first URL — and the
     whole point of an SSRF redirect attack is that hop 1 is a perfectly public
@@ -154,7 +217,10 @@ class WebReadArgs(BaseModel):
         "read in full. Requires a complete URL including https://. Returns the "
         "page's text content only."
     ),
-    timeout_s=30.0,
+    # Generous: Firecrawl renders JavaScript before returning, which is slower
+    # than a raw GET. Harmless for the built-in path, which returns in under a
+    # second and never approaches this.
+    timeout_s=55.0,
 )
 def web_read(args: WebReadArgs) -> ToolResult:
     try:
@@ -164,7 +230,14 @@ def web_read(args: WebReadArgs) -> ToolResult:
         # agent should try a different one rather than wait and retry.
         return ToolResult.failure(str(e))
     except httpx.HTTPStatusError as e:
-        return ToolResult.failure(f"{args.url} returned HTTP {e.response.status_code}.")
+        status = e.response.status_code
+        # A Firecrawl quota/outage (402/429/5xx) is the TOOL being unavailable,
+        # not the URL being bad — so the agent should say so rather than
+        # conclude the page is unreadable. A genuine 4xx from the target page
+        # is a real read failure.
+        if status in (402, 408, 429) or status >= 500:
+            return ToolResult.down(f"The page reader is temporarily unavailable (HTTP {status}).")
+        return ToolResult.failure(f"{args.url} returned HTTP {status}.")
     except httpx.HTTPError as e:
         return ToolResult.down(f"Could not reach {args.url}: {type(e).__name__}")
 
