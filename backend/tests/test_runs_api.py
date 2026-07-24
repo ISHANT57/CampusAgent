@@ -442,6 +442,30 @@ def test_sse_tool_call_events_carry_their_arguments(client, fake_resolution):
     assert "6.5 - 6.2" in body
 
 
+def test_sse_sends_keepalives_while_a_run_is_silent(client, fake_resolution, monkeypatch):
+    """REGRESSION: 'Connection lost — resuming…' across devices.
+
+    A slow provider call produces no steps for 10s+, and an idle connection
+    that has sent nothing gets dropped by the edge proxy — the actual cause,
+    and network-path, hence device-independent. The stream must emit SSE
+    comment lines during silence so the connection stays demonstrably alive.
+    """
+    from app.api.v1 import runs as runs_mod
+
+    # Immediate keepalive, fast timeout: the run is left non-terminal so every
+    # poll is silent, and the test does not have to actually wait.
+    monkeypatch.setattr(runs_mod, "KEEPALIVE_SECONDS", 0.0)
+    monkeypatch.setattr(runs_mod, "POLL_SECONDS", 0.01)
+    monkeypatch.setattr(runs_mod, "STREAM_IDLE_TIMEOUT", 0.05)
+
+    run_id = client.post("/api/v1/runs", json={"goal": "silent"}).json()["run_id"]
+    with client.stream("GET", f"/api/v1/runs/{run_id}/events") as r:
+        body = "".join(r.iter_text())
+
+    assert ": keepalive" in body    # invisible to the app, keeps the wire alive
+    assert "event: run" in body     # the run event still leads
+
+
 def test_sse_on_an_unknown_run_is_a_404_not_a_200_with_an_error_event(client):
     """Changed by the authorisation fix, and improved by it.
 

@@ -32,12 +32,14 @@ is `WHERE idx > n`, not a replay buffer.
 
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import SessionLocal, get_db
 from app.core.identity import COOKIE_NAME, MAX_AGE_SECONDS, Identity, resolve_or_issue
@@ -55,7 +57,12 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 #
 # ponytail: polling. LISTEN/NOTIFY or an in-process queue when a second
 # instance exists — at which point the SSE stream must also find the run.
-POLL_SECONDS = 0.4
+POLL_SECONDS = 0.5
+# How often, during a stretch with no new steps, to send an SSE comment line so
+# the connection is not dropped as idle. Well under the ~30-60s idle timeout of
+# a typical edge proxy — Render included — and a slow provider call routinely
+# produces no steps for 10-15s, which is when the drop happened.
+KEEPALIVE_SECONDS = 12.0
 # Stop streaming a run that has produced nothing for this long. The reaper
 # (deferred) is the real fix; this stops one abandoned browser tab from
 # holding a connection open forever.
@@ -422,48 +429,86 @@ async def stream_run(
     # request-scoped object.
     _owned_or_404(RunRepository(db, identity=identity.key).get(run_id))
     owner_key = identity.key
+    terminal = {s.value for s in RunStatus.terminal()}
+
+    def poll(after_idx: int) -> dict:
+        """One poll's database work — deliberately synchronous and run OFF the
+        event loop (via run_in_threadpool below).
+
+        Two problems this shape fixes, both of which produced "connection lost"
+        across devices on the single free-tier worker:
+
+        1. Doing blocking SQLAlchemy directly in the async generator ran a
+           ~100-700ms Neon query on the ONE event loop every poll, for every
+           open stream — starving every other connection, including new
+           EventSource handshakes.
+        2. The old generator held one pooled connection for the stream's whole
+           life (up to 3 minutes). A handful of open tabs exhausted the pool.
+           A fresh session per poll, closed immediately, holds a connection for
+           milliseconds instead.
+
+        Summaries are built here, inside the session, so no attribute is read
+        lazily after it closes.
+        """
+        session = SessionLocal()
+        try:
+            repo = RunRepository(session, identity=owner_key)
+            run = repo.get(run_id)
+            if run is None:
+                return {"gone": True}
+            return {
+                "meta": {"run_id": run.id, "goal": run.goal, "status": run.status,
+                         "provider": run.provider_name, "model": run.model},
+                "steps": [_summarise_step(s) for s in repo.steps(run_id) if s.idx > after_idx],
+                "done": run.status if run.status in terminal else None,
+                "answer": run.final_answer,
+                "error": run.error,
+            }
+        finally:
+            session.close()
 
     async def events():
-        db = SessionLocal()
-        try:
-            repo = RunRepository(db, identity=owner_key)
-            run = repo.get(run_id)
-            # Re-checked inside: between authorisation and the first read the
-            # run could in principle have been reassigned. Cheap, and it means
-            # the invariant holds at the point of disclosure, not just at the
-            # point of entry.
-            if run is None:
+        cursor = after
+        sent_run = False
+        last_send = time.monotonic()
+        idle = 0.0
+
+        while True:
+            state = await run_in_threadpool(poll, cursor)
+            if state.get("gone"):
                 yield _sse("error", {"message": "Run not found"})
                 return
 
-            yield _sse("run", {"run_id": run.id, "goal": run.goal, "status": run.status,
-                               "provider": run.provider_name, "model": run.model})
+            if not sent_run:
+                sent_run = True
+                yield _sse("run", state["meta"])
 
-            cursor = after
-            idle = 0.0
-            while True:
-                db.expire_all()   # the background thread committed; re-read
-                steps = [s for s in repo.steps(run_id) if s.idx > cursor]
+            for step in state["steps"]:
+                cursor = step["idx"]
+                idle = 0.0
+                last_send = time.monotonic()
+                yield _sse("step", step, event_id=step["idx"])
 
-                for step in steps:
-                    cursor = step.idx
-                    idle = 0.0
-                    yield _sse("step", _summarise_step(step), event_id=step.idx)
+            if state["done"]:
+                yield _sse("done", {"status": state["done"], "answer": state["answer"],
+                                    "error": state["error"]})
+                return
 
-                run = repo.get(run_id)
-                if run and run.status in {s.value for s in RunStatus.terminal()}:
-                    yield _sse("done", {"status": run.status, "answer": run.final_answer,
-                                        "error": run.error})
+            if not state["steps"]:
+                idle += POLL_SECONDS
+                if idle >= STREAM_IDLE_TIMEOUT:
+                    yield _sse("error", {"message": "Stream timed out waiting for progress."})
                     return
+                # THE cross-device fix. A slow provider call produces no steps
+                # for 10s+ (the screenshot's "thinking… 9.8s"), and Render's
+                # edge proxy drops a connection that has sent nothing. An SSE
+                # comment line is invisible to the app but keeps the connection
+                # demonstrably alive — the standard cure for exactly this.
+                if time.monotonic() - last_send >= KEEPALIVE_SECONDS:
+                    last_send = time.monotonic()
+                    yield ": keepalive\n\n"
 
-                if not steps:
-                    idle += POLL_SECONDS
-                    if idle >= STREAM_IDLE_TIMEOUT:
-                        yield _sse("error", {"message": "Stream timed out waiting for progress."})
-                        return
-                await asyncio.sleep(POLL_SECONDS)
-        finally:
-            db.close()
+            await asyncio.sleep(POLL_SECONDS)
 
     return StreamingResponse(
         events(),

@@ -24,11 +24,17 @@ engine = create_engine(
     pool_pre_ping=True,
     # Recycle below Neon's own idle timeout so we close first, on our terms.
     pool_recycle=280,
-    # Render free tier is one instance with a small worker count, and Neon's
-    # free plan caps connections. A large pool would exhaust the server's limit
-    # rather than improve throughput.
+    # Render free tier is one instance, but each in-flight run holds a
+    # connection for its whole duration (the background executor's session),
+    # and the connection string uses Neon's pooler, which multiplexes — so
+    # a modestly larger pool is safe and headroom matters when several runs
+    # and stream polls overlap.
     pool_size=5,
-    max_overflow=5,
+    max_overflow=15,
+    # Fail fast rather than hang: if the pool is genuinely exhausted, a request
+    # that waited 30s (the default) has already lost the client. 10s surfaces
+    # the real problem instead of masking it as a slow response.
+    pool_timeout=10,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
