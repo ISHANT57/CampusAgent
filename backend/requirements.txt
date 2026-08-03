@@ -10,10 +10,10 @@
 # Create the venv with:  uv venv --python 3.12 .venv
 
 # --- Web ---------------------------------------------------------------------
-fastapi==0.115.0
+fastapi==0.141.1
 uvicorn[standard]==0.30.6
 # Bumped off 0.0.12 for CVEs fixed through 0.0.32 (pip-audit, 2026-08-03).
-# fastapi==0.115.0 only requires >=0.0.7, so this is a same-major, drop-in bump.
+# fastapi==0.141.1 only requires >=0.0.7, so this is a same-major, drop-in bump.
 python-multipart==0.0.32
 
 # --- Data --------------------------------------------------------------------
