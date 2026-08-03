@@ -77,7 +77,8 @@ class DocumentText(BaseModel):
         once. The cut is announced rather than silent: an agent that does not
         know it saw a partial document will confidently summarise a fragment.
         """
-        out, used = [], 0
+        out: list[str] = []
+        used = 0
         for page in self.pages:
             block = f"[page {page['page_number']}]\n{page['text']}"
             if used + len(block) > max_chars:

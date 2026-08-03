@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import inspect
 import re
-from typing import Callable, get_type_hints
+from collections.abc import Callable
+from typing import get_type_hints
 
 from pydantic import BaseModel
 

@@ -14,13 +14,13 @@ frontend deploy.
 import time
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+from app.api.v1.identity_dep import current_identity
 from app.core.identity import Identity
 from app.core.rate_limit import RUN_CREATE_LIMIT, RUN_READ_LIMIT, limiter
 from app.llm.base import LLMError, Message, ToolSpec
 from app.llm.manager import NoProviderAvailable, build_provider, catalogue, supports_tools
-from app.api.v1.identity_dep import current_identity
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 

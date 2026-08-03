@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.agent import prompts
-from app.agent.selector import Decision, Outcome, next_action
+from app.agent.selector import Outcome, next_action
 from app.core.budget import BudgetState, RunBudget
 from app.llm.base import LLMProvider, Message
 from app.llm.manager import Mode, ResolvedProvider, RunContext, resolve

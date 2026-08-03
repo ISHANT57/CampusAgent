@@ -45,7 +45,7 @@ class RunStatus(str, enum.Enum):
     TIMED_OUT = "timed_out"
 
     @classmethod
-    def terminal(cls) -> set["RunStatus"]:
+    def terminal(cls) -> set[RunStatus]:
         return {cls.COMPLETED, cls.FAILED, cls.REJECTED, cls.CANCELLED, cls.TIMED_OUT}
 
 

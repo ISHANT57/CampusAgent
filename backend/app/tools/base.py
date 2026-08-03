@@ -8,7 +8,8 @@ ok=False lets the agent try something else.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -34,15 +35,15 @@ class ToolResult(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def success(cls, data: Any, **meta: Any) -> "ToolResult":
+    def success(cls, data: Any, **meta: Any) -> ToolResult:
         return cls(ok=True, data=data, meta=meta)
 
     @classmethod
-    def failure(cls, error: str, **meta: Any) -> "ToolResult":
+    def failure(cls, error: str, **meta: Any) -> ToolResult:
         return cls(ok=False, error=error, meta=meta)
 
     @classmethod
-    def down(cls, error: str, **meta: Any) -> "ToolResult":
+    def down(cls, error: str, **meta: Any) -> ToolResult:
         """The tool itself is unreachable — quota, outage, timeout."""
         return cls(ok=False, error=error, unavailable=True, meta=meta)
 

@@ -14,7 +14,7 @@ Two of these matter more than the rest:
 import httpx
 import pytest
 
-from app.llm.base import LLMPermanentError, LLMParseError, LLMTransientError, Message, ToolSpec
+from app.llm.base import LLMParseError, LLMPermanentError, LLMTransientError, Message, ToolSpec
 from app.llm.manager import (
     ByokConfig,
     Mode,
@@ -28,7 +28,6 @@ from app.llm.manager import (
 )
 from app.llm.openai_compatible import OpenAICompatibleProvider
 from app.llm.url_guard import UnsafeProviderURL, validate_provider_url
-
 
 # --- catalogue: providers as data -------------------------------------------
 

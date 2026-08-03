@@ -38,7 +38,7 @@ class RunBudget:
     started_at: float = field(default_factory=time.monotonic)
 
     @classmethod
-    def from_settings(cls) -> "RunBudget":
+    def from_settings(cls) -> RunBudget:
         from app.core.config import get_settings
 
         s = get_settings()

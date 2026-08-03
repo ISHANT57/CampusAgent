@@ -1,6 +1,7 @@
 """Redaction and reaper — the last two production controls."""
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timedelta, timezone
 
 from app.core.redaction import REDACTED, redact, redact_text, reset_cache
 
@@ -98,7 +99,7 @@ def test_reaper_finishes_a_run_whose_heartbeat_went_stale():
         repo = RunRepository(db, identity=UNSCOPED)
         run = repo.create("abandoned", identity="test")
         repo.start(run)
-        run.heartbeat_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        run.heartbeat_at = datetime.now(UTC) - timedelta(hours=2)
         db.commit()
 
         assert reap_stale_runs(db) >= 1
@@ -140,7 +141,7 @@ def test_reaper_catches_a_run_created_but_never_started():
     try:
         repo = RunRepository(db, identity=UNSCOPED)
         run = repo.create("never started", identity="test")   # no heartbeat at all
-        run.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        run.created_at = datetime.now(UTC) - timedelta(hours=2)
         db.commit()
         reap_stale_runs(db)
         db.refresh(run)

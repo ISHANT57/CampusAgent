@@ -183,7 +183,7 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def _require_active_provider_keys(self) -> "Settings":
+    def _require_active_provider_keys(self) -> Settings:
         """Require a key for whichever providers are actually in use.
 
         Checked here rather than per-field because which key is mandatory
@@ -217,4 +217,4 @@ def get_settings() -> Settings:
     single-instance behaviour while leaving a seam: tests call
     get_settings.cache_clear().
     """
-    return Settings()  # pyright: ignore[reportCallIssue]
+    return Settings()  # type: ignore[call-arg]  # pyright: ignore[reportCallIssue]

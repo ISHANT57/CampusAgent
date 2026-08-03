@@ -13,7 +13,6 @@ from app.core import identity as ident
 from app.core.identity import COOKIE_NAME, InvalidIdentity, issue, resolve_or_issue, verify
 from app.main import app
 
-
 # --- identity ---------------------------------------------------------------
 
 def test_issued_token_verifies():
@@ -116,8 +115,8 @@ def test_creating_runs_is_rate_limited(client, fake_resolution):
 def test_rate_limit_is_keyed_per_browser_not_per_ip(client, fake_resolution):
     """Campus NAT: an IP-keyed limit would treat the whole university as one
     caller — the exact failure Project 1 documented."""
-    from app.core.rate_limit import rate_limit_key
     from app.core.identity import COOKIE_NAME, issue
+    from app.core.rate_limit import rate_limit_key
 
     class FakeRequest:
         def __init__(self, cookies):
@@ -132,8 +131,8 @@ def test_rate_limit_is_keyed_per_browser_not_per_ip(client, fake_resolution):
 
 def test_a_forged_cookie_falls_back_to_ip_rather_than_escaping_limits(monkeypatch):
     # An attacker sending garbage must not be able to opt OUT of rate limiting.
-    from app.core.rate_limit import rate_limit_key
     from app.core.identity import COOKIE_NAME
+    from app.core.rate_limit import rate_limit_key
 
     monkeypatch.setattr("app.core.rate_limit.get_remote_address", lambda r: "1.2.3.4")
 

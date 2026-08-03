@@ -7,13 +7,12 @@ Unit tests must stay offline and free, or they stop being run.
 import httpx
 import pytest
 
-from app.tools.base import ToolResult
 from app.tools.knowledge import (
     KnowledgeClient,
+    KnowledgeSearchArgs,
     KnowledgeUnavailable,
     Passage,
     knowledge_search,
-    KnowledgeSearchArgs,
 )
 
 # A real Project 1 response shape (app/schemas/search.py: SearchResponse).

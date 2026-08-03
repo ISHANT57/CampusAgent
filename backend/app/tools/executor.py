@@ -15,7 +15,8 @@ budget says so or a terminal tool is called.
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 from pydantic import ValidationError
 

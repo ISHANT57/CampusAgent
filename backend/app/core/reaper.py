@@ -19,7 +19,7 @@ per-run timeouts already bound that, so the restart case is the real one.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ STALE_AFTER_SECONDS = 15 * 60
 
 def reap_stale_runs(db: Session, stale_after: int = STALE_AFTER_SECONDS) -> int:
     """Finish any run whose heartbeat has gone stale. Returns how many."""
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after)
+    cutoff = datetime.now(UTC) - timedelta(seconds=stale_after)
     active = {RunStatus.CREATED.value, RunStatus.PLANNING.value, RunStatus.RUNNING.value}
 
     stale = db.scalars(
@@ -51,7 +51,7 @@ def reap_stale_runs(db: Session, stale_after: int = STALE_AFTER_SECONDS) -> int:
 
     for run in stale:
         run.status = RunStatus.FAILED.value
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = datetime.now(UTC)
         run.error = (
             "This run was abandoned — the process running it stopped, most likely "
             "a restart or a deploy. Its trace up to that point is preserved."

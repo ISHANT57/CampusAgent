@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      # A real Postgres, not sqlite: the app is written against Postgres-only
+      # behaviour (JSONB columns, alembic's postgresql dialect), and tests hit
+      # SessionLocal directly rather than mocking the DB layer.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: campusagent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Dummy values. No test here calls a real provider — every LLM/tool call
+      # is mocked at the httpx transport layer — so these only need to satisfy
+      # Settings' fail-fast validation at import time.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/campusagent_test
+      APP_SECRET: ci-test-secret-not-for-production
+      KNOWLEDGE_BASE_URL: http://localhost:9
+      KNOWLEDGE_BASE_API_KEY: ci-test-key
+      GEMINI_API_KEY: ci-test-key
+      OPENROUTER_API_KEY: ci-test-key
+      LOG_LEVEL: WARNING
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type check (mypy)
+        run: mypy
+
+      - name: Migrate test database
+        run: alembic upgrade head
+
+      - name: Test (pytest)
+        run: pytest -q
+
+      - name: Dependency scan (pip-audit)
+        # Report-only: this surfaces known CVEs in pinned deps (currently:
+        # starlette, pinned by fastapi==0.115.0's own <0.39.0 constraint — no
+        # fix available without a fastapi major bump, tracked separately) so
+        # they stay visible without blocking every PR on an upgrade that needs
+        # its own review.
+        run: pip-audit -r requirements.txt || true
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Unit/component tests (vitest)
+        run: npm test
+
+      - name: Type check + build
+        run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E smoke test (playwright)
+        # Runs against the just-built dist/, via `vite preview` — the same
+        # artifact Vercel would serve, not the dev server.
+        run: npm run test:e2e
+
+      - name: Dependency scan (npm audit)
+        # Report-only, same reasoning as pip-audit above: the one open finding
+        # (react-router-dom, fix = a v7 major bump) needs a deliberate upgrade,
+        # not a CI block.
+        run: npm audit || true
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false

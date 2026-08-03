@@ -14,7 +14,7 @@ putting its equivalent constant at the endpoint instead.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,7 +23,6 @@ from app.core.config import get_settings
 from app.core.redaction import redact
 from app.models.run import Run, RunStatus
 from app.models.step import Step
-
 
 #: Sentinel for "this caller is trusted and wants every run".
 #:
@@ -102,12 +101,12 @@ class RunRepository:
 
     def start(self, run: Run) -> None:
         run.status = RunStatus.RUNNING.value
-        run.started_at = datetime.now(timezone.utc)
+        run.started_at = datetime.now(UTC)
         run.heartbeat_at = run.started_at
         self.db.commit()
 
     def heartbeat(self, run: Run) -> None:
-        run.heartbeat_at = datetime.now(timezone.utc)
+        run.heartbeat_at = datetime.now(UTC)
         self.db.commit()
 
     def finish(
@@ -122,7 +121,7 @@ class RunRepository:
         # provider context — both can quote a credential.
         run.final_answer = redact(answer) if answer else None
         run.error = redact(error) if error else None
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = datetime.now(UTC)
         self.db.commit()
 
     def recent(self, limit: int = 20, offset: int = 0) -> list[Run]:
@@ -184,7 +183,7 @@ class RunRepository:
             run.prompt_tokens += prompt_tokens
         if completion_tokens:
             run.completion_tokens += completion_tokens
-        run.heartbeat_at = datetime.now(timezone.utc)
+        run.heartbeat_at = datetime.now(UTC)
 
         self.db.commit()
         return step

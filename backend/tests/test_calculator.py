@@ -10,7 +10,6 @@ import pytest
 
 from app.tools.calculator import CalculatorArgs, UnsafeExpression, calculator, evaluate
 
-
 # --- it actually computes ---------------------------------------------------
 
 @pytest.mark.parametrize(

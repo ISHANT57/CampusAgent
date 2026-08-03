@@ -13,14 +13,12 @@ import httpx
 import pytest
 
 from app.tools.web_read import (
-    MAX_CONTENT_CHARS,
     UnsafeURL,
     WebReadArgs,
     extract_text,
     validate_url,
     web_read,
 )
-
 
 # --- scheme -----------------------------------------------------------------
 
@@ -189,8 +187,8 @@ def test_registered_with_the_full_mvp_toolset():
 # --- Firecrawl backend (config-gated) ---------------------------------------
 
 def test_builtin_fetcher_is_used_when_no_firecrawl_key(monkeypatch):
-    from app.core.config import get_settings
     import app.tools.web_read as wr
+    from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "firecrawl_api_key", "")
     monkeypatch.setattr(wr.socket, "getaddrinfo",
@@ -205,8 +203,8 @@ def test_builtin_fetcher_is_used_when_no_firecrawl_key(monkeypatch):
 
 
 def test_firecrawl_is_used_when_the_key_is_set(monkeypatch):
-    from app.core.config import get_settings
     import app.tools.web_read as wr
+    from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "firecrawl_api_key", "fc-test-key")
     monkeypatch.setattr(wr.socket, "getaddrinfo",
@@ -232,8 +230,8 @@ def test_firecrawl_is_used_when_the_key_is_set(monkeypatch):
 def test_ssrf_is_enforced_before_firecrawl_is_ever_called(monkeypatch):
     # A private address must be rejected by OUR guard, so Firecrawl is never
     # even asked to fetch it — we do not become a proxy to the internal network.
-    from app.core.config import get_settings
     import app.tools.web_read as wr
+    from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "firecrawl_api_key", "fc-test-key")
     called = {"firecrawl": False}
@@ -245,8 +243,8 @@ def test_ssrf_is_enforced_before_firecrawl_is_ever_called(monkeypatch):
 
 
 def test_firecrawl_quota_reads_as_unavailable_not_a_bad_url(monkeypatch):
-    from app.core.config import get_settings
     import app.tools.web_read as wr
+    from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "firecrawl_api_key", "fc-test-key")
     monkeypatch.setattr(wr.socket, "getaddrinfo",

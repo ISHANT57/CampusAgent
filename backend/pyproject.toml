@@ -1,0 +1,36 @@
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+# Alembic-generated revision scripts, not hand-written app code — linting
+# codegen output flags style choices Alembic itself made, not ours to fix.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = [
+    "B008",  # FastAPI's Depends(...)/Header(...) as a default arg is the framework's idiom, not a bug.
+    "UP042", # str+Enum vs StrEnum is a deliberate model choice, not a lint fix.
+]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app", "cli.py", "verify.py"]
+ignore_missing_imports = true
+# Not strict: this codebase leans on runtime validation (pydantic) over
+# exhaustive annotations. Strict mode on a mixed-annotation codebase produces
+# noise, not bugs caught. Tighten per-module with `# mypy: strict` if a module
+# earns it.
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# These three modules build a plain dict of shared fields (token counts, model
+# name) and splat it into a dataclass/exception constructor with **. The values
+# are correctly typed at each call site; mypy just cannot verify a **dict
+# against per-parameter types without a TypedDict, which would mean typing three
+# near-identical shapes for a pattern used in exactly one place per module. Real
+# gap, not worth the ceremony — narrowed to arg-type only, so a genuine bug of
+# another kind in these files still surfaces.
+[[tool.mypy.overrides]]
+module = ["app.agent.selector", "app.llm.gemini", "app.llm.openai_compatible"]
+disable_error_code = ["arg-type"]

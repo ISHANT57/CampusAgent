@@ -48,7 +48,8 @@ def runnable_goals(registered_tools: set[str]) -> tuple[list[dict], list[dict]]:
     depress the success rate for a reason that has nothing to do with the
     agent — and would quietly hide real regressions behind a known-bad number.
     """
-    runnable, skipped = [], []
+    runnable: list[dict] = []
+    skipped: list[dict] = []
     for goal in load_golden():
         missing = set(goal.get("requires", [])) - registered_tools
         (skipped if missing else runnable).append(

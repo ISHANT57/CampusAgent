@@ -1,0 +1,8 @@
+# Lint/type-check/audit tooling. Deliberately separate from requirements.txt:
+# none of this belongs in the Docker image that ships to Render — only CI and
+# local dev install it. See CI workflow: .github/workflows/ci.yml
+-r requirements.txt
+
+ruff==0.16.1
+mypy==2.3.0
+pip-audit==2.10.1

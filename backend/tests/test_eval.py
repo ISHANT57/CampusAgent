@@ -5,7 +5,6 @@ this suite free to run. `cli.py eval` runs the real agent when you want a real
 number; these tests prove the arithmetic behind it is right.
 """
 
-import pytest
 
 from app.eval.metrics import (
     GoalScore,
@@ -37,7 +36,7 @@ class FakeResult:
 
 def _trace(*tools, unavailable=()):
     out = []
-    for i, t in enumerate(tools):
+    for t in tools:
         out.append({"idx": len(out), "kind": "tool_call", "tool": t, "input": {}, "output": None, "error": None})
         out.append({
             "idx": len(out), "kind": "observation", "tool": t,

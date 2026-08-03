@@ -45,7 +45,7 @@ def _config_fails_loudly():
     from app.core.config import Settings
 
     try:
-        Settings(_env_file=None, gemini_api_key="k", openrouter_api_key="k")
+        Settings(_env_file=None, gemini_api_key="k", openrouter_api_key="k")  # type: ignore[call-arg]
     except ValidationError:
         return "missing DATABASE_URL rejected at startup"
     raise AssertionError("missing DATABASE_URL was NOT rejected")
@@ -64,6 +64,7 @@ def _connect():
 
     with engine.connect() as c:
         v = c.execute(text("select version()")).scalar()
+    assert v is not None
     return v.split(",")[0]
 
 

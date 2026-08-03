@@ -33,7 +33,7 @@ is `WHERE idx > n`, not a replay buffer.
 import asyncio
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -41,8 +41,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.core.database import SessionLocal, get_db
 from app.api.v1.identity_dep import current_identity
+from app.core.database import SessionLocal, get_db
 from app.core.identity import Identity
 from app.core.rate_limit import RUN_CREATE_LIMIT, RUN_READ_LIMIT, limiter
 from app.llm.manager import ByokConfig, Mode, NoProviderAvailable, RunContext, resolve
@@ -190,7 +190,7 @@ def create_run(
             if e.reason == "trial_exhausted"
             else status.HTTP_400_BAD_REQUEST
         )
-        raise HTTPException(status_code=code, detail={"message": str(e), "reason": e.reason})
+        raise HTTPException(status_code=code, detail={"message": str(e), "reason": e.reason}) from e
 
     run = RunRepository(db, identity=UNSCOPED).create(
         payload.goal,
@@ -360,7 +360,7 @@ def cancel_run(
 def _elapsed(run) -> float | None:
     if not run.started_at:
         return None
-    end = run.finished_at or datetime.now(timezone.utc)
+    end = run.finished_at or datetime.now(UTC)
     return round((end - run.started_at).total_seconds(), 1)
 
 

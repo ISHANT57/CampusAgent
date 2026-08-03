@@ -4,3 +4,7 @@ dist/
 .env.local
 *.local
 vite.config.ts.timestamp-*
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

@@ -11,13 +11,13 @@ The URL comes from app.core.config, NOT from alembic.ini. Two reasons:
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Importing the package registers every model on Base.metadata. Without it,
 # autogenerate compares an EMPTY metadata against the live database and
 # cheerfully emits a migration that drops every table.
 import app.models  # noqa: F401
+from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
 

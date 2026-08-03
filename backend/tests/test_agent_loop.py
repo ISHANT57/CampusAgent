@@ -15,7 +15,6 @@ from app.llm.base import (
     LLMParseError,
     LLMPermanentError,
     LLMTransientError,
-    Message,
     ToolCall,
     Usage,
 )
@@ -199,8 +198,8 @@ def db():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from app.core.database import Base
     import app.models  # noqa: F401  registers the tables
+    from app.core.database import Base
 
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

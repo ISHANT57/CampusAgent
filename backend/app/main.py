@@ -19,10 +19,14 @@ from app.api.v1.identity_dep import router as identity_router
 from app.api.v1.providers import router as providers_router
 from app.api.v1.runs import router as runs_router
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.core.rate_limit import limiter
+from app.core.request_id import RequestIDMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
-logger = logging.getLogger(__name__)
 settings = get_settings()
+configure_logging(settings.log_level)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -58,7 +62,9 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# slowapi's handler is typed for its own exception, not Starlette's generic
+# Exception — a known mismatch between the two libraries' stubs, not a bug here.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # Health is mounted at the root, NOT under /api/v1: platform probes expect a
 # stable, unversioned path. Versioning a liveness check means a future /api/v2
@@ -80,6 +86,12 @@ _wildcard = "*" in settings.cors_origins
 if _wildcard and settings.cors_origins != ["*"]:
     logger.warning("CORS_ALLOWED_ORIGINS mixes '*' with explicit origins; '*' wins and cookies are disabled")
 
+# Order matters: Starlette's LAST-added middleware runs OUTERMOST, so CORS
+# stays last here to wrap everything below it, including error responses from
+# security-headers/request-id and from routes themselves — a response missing
+# CORS headers is invisible to the browser regardless of its status code.
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -88,6 +100,7 @@ app.add_middleware(
     # rather than a CORS error, because the cookie is simply never sent.
     allow_origin_regex=settings.cors_allowed_origin_regex or None,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Last-Event-ID", "X-Identity"],
+    allow_headers=["Content-Type", "Last-Event-ID", "X-Identity", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
     allow_credentials=not _wildcard,
 )

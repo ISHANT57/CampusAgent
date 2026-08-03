@@ -13,7 +13,7 @@ which a client renders as "connect a provider". There is a test for it.
 | **Neon Postgres** | ✅ | runs + steps. **A different database from Project 1's.** |
 | Project 1 on Render | ✅ | reached over HTTPS with `X-API-Key` |
 | Tavily | optional | only for `web_search` |
-| **Vercel** | ❌ not yet | there is no frontend. That is M45. |
+| **Vercel** | ✅ | the frontend, `frontend/` |
 | **Supabase Storage** | ❌ never | this project stores no blobs |
 | **Qdrant** | ❌ never | Project 1 owns the vectors; P2 reaches it over HTTP only |
 
@@ -149,14 +149,11 @@ awake.
 the reaper marks it failed at next startup — nothing is left permanently in
 `running`, but the run does not resume.
 
-**No frontend.** The API is usable with curl or the CLI. M45.
-
 ## Deferred, with the trigger
 
 | Item | Ships when |
 |---|---|
 | Hosted Trial Mode + quota | after the product is stable — needs global ceiling, per-identity limits, abuse protection, monitoring |
-| Frontend | M45 |
 | Identity-scoped repository | the next run-reading endpoint — currently ownership is enforced at the endpoint, not structurally |
 | Run resumption | a restart losing work becomes painful |
 | Shared rate-limit store | instance #2 |

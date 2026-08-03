@@ -1,5 +1,7 @@
 # CampusBrain Agent
 
+[![CI](https://github.com/ISHANT57/CampusAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/ISHANT57/CampusAgent/actions/workflows/ci.yml)
+
 An autonomous AI agent runtime. It takes a goal in plain language, decides for
 itself which tools are needed, executes them, reasons over the results, and
 returns a complete answer with its full reasoning trace visible.
@@ -39,19 +41,19 @@ change (`app/tools/knowledge.py`).
 
 ## Status
 
-**Core Path: 22 milestones to a working agent. 4 done, 18 remaining.**
+Working end to end: FastAPI backend (agent loop, tool registry, dual LLM
+providers with fallback, run budget, rate limiting, identity, trial mode) and
+a React frontend (run console, live SSE trace, provider settings), both
+deployed. 316 backend tests, CI-enforced on every push (lint, type check,
+migration, test, dependency scan, Docker build — see the badge above).
 
-| Phase | Milestones | State |
-|---|---|---|
-| A. Foundations | M0–M4 | ✅ done |
-| B. LLM (one provider) | M5, M6, M8 | ⬜ |
-| C. Tools | M12–M16, M18 | ⬜ |
-| D. The loop | M19–M24 | ⬜ |
-| E. Proof | M25, M17, M39, M41 | ⬜ |
-
-**M23 is the agent. M25 proves it.** Everything runs synchronously in one
-process — no async runs, queues, workers, or approval flows. Those are deferred
-behind explicit triggers in [DEVELOPMENT_STRATEGY.md](DEVELOPMENT_STRATEGY.md).
+[DEVELOPMENT_STRATEGY.md](DEVELOPMENT_STRATEGY.md)'s milestone table only
+tracks Phase A in detail; treat it as the *design* record (why each piece
+exists, what was deferred and why) rather than a live progress tracker — it
+stopped being updated per-milestone once the loop (M23) was working.
+Everything runs synchronously in one process — no async runs, queues,
+workers, or approval flows. Those stay deferred behind the explicit triggers
+documented there.
 
 Provider frozen by M0, amended after M8: **`gemini-3.1-flash-lite`** — 100%
 format compliance over a full 36/36 sample, the only model to clear the
@@ -120,8 +122,16 @@ python cli.py runs           # recent runs
 python cli.py trace 13       # replay a run's full reasoning trace
 python cli.py eval           # golden set + metrics
 python verify.py             # end-to-end checks incl. live model calls
-python -m pytest -q          # 157 offline tests
+python -m pytest -q          # 316 offline tests
 ```
+
+## Frontend
+
+React + Vite console at `frontend/` — run creation, live SSE trace, provider
+settings. See [frontend/package.json](frontend/package.json) for scripts
+(`npm run dev`, `npm run lint`, `npm run build`) and
+[DEPLOYMENT.md](DEPLOYMENT.md) for the Vercel deploy order (it must go
+*after* the backend's CORS origins are set, not before).
 
 ## Running the M0 spike
 

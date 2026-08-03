@@ -12,12 +12,13 @@ requiring a terminal tool call. See app/agent/loop.py for how "stopped
 requesting tools" is distinguished from M0's NO_CALL failure class.
 """
 
-from app.tools.registry import registry
-
 # Imported for side effects: each module's @registry.register decorator runs.
-from app.tools import calculator  # noqa: F401,E402
-from app.tools import knowledge  # noqa: F401,E402
-from app.tools import web_read  # noqa: F401,E402
-from app.tools import web_search  # noqa: F401,E402
+from app.tools import (
+    calculator,  # noqa: F401,E402
+    knowledge,  # noqa: F401,E402
+    web_read,  # noqa: F401,E402
+    web_search,  # noqa: F401,E402
+)
+from app.tools.registry import registry
 
 __all__ = ["registry"]
