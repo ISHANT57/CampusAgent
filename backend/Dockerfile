@@ -2,7 +2,7 @@
 # selectolax have no wheels for it and fall back to source builds needing a C
 # toolchain. Developing on a runtime the deploy does not use is the "works on
 # my machine" bug factory.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
