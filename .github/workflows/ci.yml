@@ -25,17 +25,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      # Dummy values. No test here calls a real provider — every LLM/tool call
-      # is mocked at the httpx transport layer — so these only need to satisfy
-      # Settings' fail-fast validation at import time.
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/campusagent_test
-      APP_SECRET: ci-test-secret-not-for-production
-      KNOWLEDGE_BASE_URL: http://localhost:9
-      KNOWLEDGE_BASE_API_KEY: ci-test-key
-      GEMINI_API_KEY: ci-test-key
-      OPENROUTER_API_KEY: ci-test-key
-      LOG_LEVEL: WARNING
     defaults:
       run:
         working-directory: backend
@@ -55,6 +44,27 @@ jobs:
 
       - name: Type check (mypy)
         run: mypy
+
+      - name: Write test environment
+        # A backend/.env file, deliberately NOT job-level `env:` vars — dummy
+        # values, since no test here calls a real provider (every LLM/tool call
+        # is mocked at the httpx transport layer). test_config.py constructs
+        # Settings(_env_file=None, ...) to prove required fields are actually
+        # required; _env_file=None only turns off THIS file, not the shell
+        # environment, so shell-level vars would satisfy that construction
+        # regardless of what the test omits and silently defeat the test (as
+        # job-level `env:` here previously did). A .env file is exactly what
+        # local dev already uses, and the tests are written against that.
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/campusagent_test
+          APP_SECRET=ci-test-secret-not-for-production
+          KNOWLEDGE_BASE_URL=http://localhost:9
+          KNOWLEDGE_BASE_API_KEY=ci-test-key
+          GEMINI_API_KEY=ci-test-key
+          OPENROUTER_API_KEY=ci-test-key
+          LOG_LEVEL=WARNING
+          EOF
 
       - name: Migrate test database
         run: alembic upgrade head

@@ -109,7 +109,7 @@ export function Home() {
             <Button
               onClick={() => submit()}
               disabled={!goal.trim() || submitting || !hasProvider}
-              className="h-8 w-8 rounded-full p-0"
+              className="h-11 w-11 rounded-full p-0"
               aria-label="Run"
             >
               <ArrowUp size={16} />
