@@ -52,7 +52,7 @@ slowapi==0.1.9
 # --- Dev ---------------------------------------------------------------------
 # Bumped off 8.3.3 for a CVE fixed in 9.0.3 (pip-audit, 2026-08-03). Full suite
 # re-verified green on 9.0.3 before pinning.
-pytest==9.0.3
+pytest==9.1.1
 
 # DELIBERATELY ABSENT, each with the trigger that revives it (PRD section 7):
 #   langchain / langgraph  -> M47, as a comparison against a baseline we
