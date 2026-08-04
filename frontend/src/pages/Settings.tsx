@@ -108,7 +108,7 @@ export function Settings() {
             </Field>
           )}
 
-          {provider.models.length > 0 && (
+          {provider.models.length > 0 ? (
             <Field label="model">
               <select
                 value={model || provider.default_model || ""}
@@ -123,6 +123,21 @@ export function Settings() {
                 ))}
               </select>
             </Field>
+          ) : (
+            // No curated list to pick from ("custom" today) — the provider's
+            // own blurb promises "you supply the URL and model", so there must
+            // be somewhere to actually type one. Without this branch the model
+            // field silently never renders, `model` stays "", and the request
+            // goes out with model: null — "No model specified" from a screen
+            // that never asked for one.
+            <Field label="model">
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="model id, e.g. gpt-4o-mini"
+                className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] mono"
+              />
+            </Field>
           )}
 
           {provider.allows_custom_base_url && (
@@ -136,7 +151,17 @@ export function Settings() {
             </Field>
           )}
 
-          <Button onClick={test} disabled={testing || (provider.requires_key && !apiKey)}>
+          <Button
+            onClick={test}
+            disabled={
+              testing ||
+              (provider.requires_key && !apiKey) ||
+              // No curated list and no default to fall back to (only "custom"
+              // today) — without a typed model this would round-trip to the
+              // backend just to learn "No model specified".
+              (provider.models.length === 0 && !provider.default_model && !model)
+            }
+          >
             {testing ? "testing…" : "Test connection"}
           </Button>
 
