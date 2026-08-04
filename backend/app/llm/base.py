@@ -141,6 +141,30 @@ class LLMParseError(LLMError):
     Distinct from the above because the fix is a repair prompt, not a retry."""
 
 
+def parse_json_response(response: Any, *, provider: str, model: str) -> dict[str, Any]:
+    """The shared last step of every adapter's success path: a 200 whose body
+    is not valid JSON.
+
+    Not wire-format-specific — every adapter hit this the same unguarded way,
+    and it is not a hypothetical: a custom/Ollama base URL missing its `/v1`
+    suffix routes to a path that 200s with an empty body, and `response.json()`
+    then raised a bare `json.JSONDecodeError` that was not an LLMError at all.
+    It escaped every adapter's error handling, fell through to the generic
+    `except Exception` in the /providers/test endpoint, and reached the user
+    as "JSONDecodeError: Expecting value: line 1 column 1 (char 0)" — true, and
+    useless to someone who does not know what raised it or why.
+    """
+    try:
+        return response.json()
+    except ValueError as e:
+        raise LLMPermanentError(
+            f"{provider} returned a 200 response that was not valid JSON ({e}). "
+            "This usually means the base URL is wrong — check it points at the "
+            "API root (often needs a trailing /v1).",
+            provider=provider, model=model, status=response.status_code,
+        ) from e
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     """What the agent loop depends on. Nothing more.

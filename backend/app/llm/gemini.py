@@ -23,6 +23,7 @@ from app.llm.base import (
     ToolCall,
     ToolSpec,
     Usage,
+    parse_json_response,
 )
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -201,7 +202,7 @@ class GeminiProvider:
         if response.status_code != 200:
             self._raise_for_error(response)
 
-        raw = response.json()
+        raw = parse_json_response(response, provider=self.name, model=self.model)
         text, calls, finish = self._parse(raw)
         usage = raw.get("usageMetadata") or {}
 

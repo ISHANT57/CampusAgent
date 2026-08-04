@@ -420,3 +420,20 @@ def test_error_carries_provider_and_model():
     with pytest.raises(LLMPermanentError) as e:
         _provider()._raise_for_error(_resp(401, {"error": {"message": "Invalid API key"}}))
     assert e.value.provider == "groq" and e.value.model == "m"
+
+
+def test_a_200_with_no_json_body_is_a_clean_error_not_a_bare_json_exception():
+    """The exact bug reported live: a custom endpoint's base URL missing its
+    /v1 suffix routes to a path that 200s with an empty body. Before this,
+    that reached the /providers/test response as a bare
+    "JSONDecodeError: Expecting value: line 1 column 1 (char 0)" — accurate,
+    and meaningless to someone who has no idea what raised it."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content="")
+
+    provider = _provider()
+    provider._client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    with pytest.raises(LLMPermanentError) as e:
+        provider.complete([Message(role="user", content="hi")])
+    assert "base URL" in str(e.value)
