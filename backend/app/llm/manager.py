@@ -19,6 +19,7 @@ from enum import Enum
 
 from app.core.budget import RunBudget
 from app.core.config import get_settings
+from app.llm.anthropic import AnthropicProvider
 from app.llm.base import LLMProvider
 from app.llm.gemini import GeminiProvider
 from app.llm.openai_compatible import OpenAICompatibleProvider
@@ -161,8 +162,15 @@ def build_provider(
             timeout=settings.llm_timeout,
             max_output_tokens=settings.llm_max_output_tokens,
         )
-    # `anthropic` lands here until its adapter exists. Failing loudly beats
-    # silently routing Claude through an incompatible format.
+    if adapter == "anthropic":
+        return AnthropicProvider(
+            api_key=api_key,
+            model=resolved_model,
+            timeout=settings.llm_timeout,
+            max_output_tokens=settings.llm_max_output_tokens,
+        )
+    # Any future adapter lands here until it exists. Failing loudly beats
+    # silently routing a vendor through an incompatible format.
     raise NoProviderAvailable(f"Adapter {adapter!r} is not implemented yet.", reason="no_adapter")
 
 

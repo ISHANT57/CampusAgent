@@ -97,10 +97,25 @@ def test_ollama_needs_no_key(monkeypatch):
     assert p.api_key == ""
 
 
-def test_unimplemented_adapter_fails_loudly():
-    # Better than silently routing Claude through an incompatible format.
+def test_anthropic_adapter_builds():
+    from app.llm.anthropic import AnthropicProvider
+
+    p = build_provider("anthropic", api_key="k")
+    assert isinstance(p, AnthropicProvider)
+    assert p.model == catalogue()["anthropic"]["default_model"]
+
+
+def test_unimplemented_adapter_still_fails_loudly(monkeypatch):
+    # Better than silently routing a vendor through an incompatible format.
+    # Anthropic graduated out of this path — this proves the safety net
+    # itself still works for whatever the next new adapter is.
+    monkeypatch.setitem(
+        catalogue(), "not-yet-built",
+        {"adapter": "not-yet-built", "label": "x", "blurb": "x", "default_model": "m",
+         "base_url": "https://x.test", "requires_key": False},
+    )
     with pytest.raises(NoProviderAvailable) as e:
-        build_provider("anthropic", api_key="k")
+        build_provider("not-yet-built")
     assert e.value.reason == "no_adapter"
 
 

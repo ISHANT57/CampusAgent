@@ -24,13 +24,13 @@ check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 
-# These three modules build a plain dict of shared fields (token counts, model
-# name) and splat it into a dataclass/exception constructor with **. The values
-# are correctly typed at each call site; mypy just cannot verify a **dict
-# against per-parameter types without a TypedDict, which would mean typing three
-# near-identical shapes for a pattern used in exactly one place per module. Real
+# These modules build a plain dict of shared fields (token counts, model name)
+# and splat it into a dataclass/exception constructor with **. The values are
+# correctly typed at each call site; mypy just cannot verify a **dict against
+# per-parameter types without a TypedDict, which would mean typing a near-
+# identical shape for a pattern used in exactly one place per module. Real
 # gap, not worth the ceremony — narrowed to arg-type only, so a genuine bug of
 # another kind in these files still surfaces.
 [[tool.mypy.overrides]]
-module = ["app.agent.selector", "app.llm.gemini", "app.llm.openai_compatible"]
+module = ["app.agent.selector", "app.llm.gemini", "app.llm.openai_compatible", "app.llm.anthropic"]
 disable_error_code = ["arg-type"]
