@@ -25,3 +25,31 @@ export function formatWhen(iso: string | null): string {
   if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
   return new Date(iso).toLocaleDateString();
 }
+
+export interface DateGroup<T> {
+  label: string;
+  items: T[];
+}
+
+/** Buckets a list into Today / Yesterday / Earlier by calendar day, not a
+ *  rolling 24h window — an item from 11pm yesterday and one from 1am today
+ *  are 2 hours apart but belong in different buckets, which `formatWhen`'s
+ *  minutes-based math doesn't distinguish. Order within each bucket is
+ *  whatever order `items` was already in — the caller's job, not this one's. */
+export function groupByDay<T extends { created_at: string | null }>(items: T[]): DateGroup<T>[] {
+  const groups = new Map<string, T[]>();
+  const todayKey = new Date().toDateString();
+  const yesterdayKey = new Date(Date.now() - 86_400_000).toDateString();
+
+  for (const item of items) {
+    const key = item.created_at ? new Date(item.created_at).toDateString() : null;
+    const label = key === todayKey ? "Today" : key === yesterdayKey ? "Yesterday" : "Earlier";
+    const list = groups.get(label);
+    if (list) list.push(item);
+    else groups.set(label, [item]);
+  }
+
+  return ["Today", "Yesterday", "Earlier"]
+    .filter((label) => groups.has(label))
+    .map((label) => ({ label, items: groups.get(label) as T[] }));
+}
