@@ -62,14 +62,25 @@ export function NavRail() {
         </>
       )}
 
-      {/* --- desktop icon rail, md and up ------------------------------ */}
-      <nav className="relative hidden shrink-0 flex-col items-center border-r border-[var(--color-border)] bg-[var(--color-surface)] py-4 md:flex md:w-16">
+      {/* --- desktop icon rail, md and up -------------------------------
+          No fixed width: the rail auto-sizes to its widest child, which is
+          this brand row, not the icon buttons below it — so the wordmark
+          gets room to breathe while the nav icons stay exactly as narrow as
+          they were, just centered in the extra width. Otherwise the rail was
+          icon-only with zero visible "CampusBrain Agent" anywhere on screen
+          at desktop width. */}
+      <nav className="relative hidden shrink-0 flex-col items-center border-r border-[var(--color-border)] bg-[var(--color-surface)] py-4 md:flex">
         <Link
           to="/"
           aria-label="CampusBrain Agent — home"
-          className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-accent)] hover:bg-[var(--color-accent-tint)]"
+          className="mb-6 flex items-center gap-2 px-4 text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]"
         >
-          <Sparkles size={20} />
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent-tint)]">
+            <Sparkles size={18} />
+          </span>
+          <span className="font-heading whitespace-nowrap text-sm font-semibold text-[var(--color-text)]">
+            CampusBrain <span className="text-[var(--color-accent)]">Agent</span>
+          </span>
         </Link>
 
         <RailIcon to="/" label="Home" active={inSearchFlow} icon={<Sparkles size={19} />} />

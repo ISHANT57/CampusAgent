@@ -153,6 +153,12 @@ def parse_json_response(response: Any, *, provider: str, model: str) -> dict[str
     `except Exception` in the /providers/test endpoint, and reached the user
     as "JSONDecodeError: Expecting value: line 1 column 1 (char 0)" — true, and
     useless to someone who does not know what raised it or why.
+
+    A wrong base URL is not the only way to land here: a proxy in front of the
+    real API (a WAF, a bot-detection layer) can also swallow a request behind
+    a 200 — found live testing a router service, where the same request some-
+    times got a genuine 401 straight from the API and sometimes an empty 200
+    from whatever sits in front of it. Both symptoms are worth naming.
     """
     try:
         return response.json()
@@ -160,7 +166,8 @@ def parse_json_response(response: Any, *, provider: str, model: str) -> dict[str
         raise LLMPermanentError(
             f"{provider} returned a 200 response that was not valid JSON ({e}). "
             "This usually means the base URL is wrong — check it points at the "
-            "API root (often needs a trailing /v1).",
+            "API root (often needs a trailing /v1) — or a proxy/gateway in "
+            "front of the API is intercepting the request before it arrives.",
             provider=provider, model=model, status=response.status_code,
         ) from e
 
