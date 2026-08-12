@@ -59,7 +59,7 @@ export function Settings() {
         <ArrowLeft size={14} /> Back
       </Link>
 
-      <h1 className="mb-1 text-xl font-semibold">AI provider</h1>
+      <h1 className="font-heading mb-1 text-xl font-bold text-[var(--color-text)]">AI provider</h1>
       <p className="mb-6 text-sm text-[var(--color-muted)]">
         You bring your own key, so there are no usage limits beyond your provider's.
       </p>

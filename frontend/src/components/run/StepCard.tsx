@@ -53,7 +53,7 @@ export function StepCard({ step, observation, pending, elapsed }: Props) {
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="font-medium text-[var(--color-tool)]">{step.tool}</span>
+            <span className="font-medium text-[var(--color-text)]">{step.tool}</span>
             {/* The key argument inline: a trace where every card must be
                 opened to see what was asked is a list, not a trace. */}
             <span className="truncate text-sm text-[var(--color-muted)] mono">

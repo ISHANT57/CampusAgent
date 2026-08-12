@@ -60,9 +60,9 @@ export function Home() {
 
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-16">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-[760px]">
         <div className="mb-10 text-center">
-          <h1 className="text-[2rem] font-semibold tracking-tight">
+          <h1 className="font-heading text-[2rem] font-bold tracking-tight text-[var(--color-text)]">
             What should the agent do?
           </h1>
           <p className="mt-2 text-[15px] text-[var(--color-muted)]">
@@ -86,7 +86,7 @@ export function Home() {
           </Link>
         )}
 
-        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg shadow-black/20 transition-colors focus-within:border-[var(--color-border-strong)]">
+        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm shadow-black/5 transition-colors focus-within:border-[var(--color-border-strong)]">
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}

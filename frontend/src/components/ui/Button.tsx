@@ -13,7 +13,7 @@ export function Button({ variant = "primary", className, ...props }: Props) {
         "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
         "disabled:cursor-not-allowed disabled:opacity-40",
         variant === "primary" &&
-          "bg-[var(--color-accent)] text-[#06121f] hover:bg-[var(--color-accent)]/90",
+          "bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)]",
         variant === "ghost" &&
           "border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-2)]",
         variant === "danger" &&
