@@ -31,10 +31,10 @@ from app.llm.url_guard import UnsafeProviderURL, validate_provider_url
 
 # --- catalogue: providers as data -------------------------------------------
 
-def test_catalogue_loads_all_eight_providers():
+def test_catalogue_loads_all_nine_providers():
     assert set(catalogue()) == {
         "gemini", "groq", "openrouter", "github_models",
-        "openai", "anthropic", "ollama", "custom",
+        "openai", "anthropic", "agentrouter", "ollama", "custom",
     }
 
 
@@ -52,7 +52,7 @@ def test_every_model_declares_tool_support():
             assert "supports_tools" in model, f"{name}/{model['id']}"
 
 
-def test_eight_providers_collapse_to_three_adapters():
+def test_nine_providers_collapse_to_three_adapters():
     adapters = {e["adapter"] for e in catalogue().values()}
     assert len(adapters) == 3
 
@@ -71,8 +71,8 @@ def test_unknown_provider_is_a_typed_refusal():
 
 # --- construction -----------------------------------------------------------
 
-def test_openai_compatible_adapter_serves_six_providers():
-    for name in ("groq", "openrouter", "github_models", "openai", "custom"):
+def test_openai_compatible_adapter_serves_seven_providers():
+    for name in ("groq", "openrouter", "github_models", "openai", "agentrouter", "custom"):
         assert catalogue()[name]["adapter"] == "openai_compatible"
     assert catalogue()["ollama"]["adapter"] == "openai_compatible"
 

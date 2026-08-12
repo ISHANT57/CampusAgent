@@ -172,6 +172,37 @@
         }
       ]
     },
+    "agentrouter": {
+      "adapter": "openai_compatible",
+      "label": "AgentRouter",
+      "blurb": "Third-party proxy in front of Claude/GPT models. Tool calling not independently verified — use Test connection before relying on it.",
+      "base_url": "https://agentrouter.org/v1",
+      "auth": "bearer",
+      "requires_key": true,
+      "allows_custom_base_url": false,
+      "keys_url": "https://agentrouter.org/console",
+      "default_model": "claude-opus-4-8",
+      "models": [
+        {
+          "id": "claude-opus-4-8",
+          "label": "Claude Opus 4.8",
+          "supports_tools": true,
+          "notes": "proxied — verify with Test connection, not independently measured"
+        },
+        {
+          "id": "claude-opus-5",
+          "label": "Claude Opus 5",
+          "supports_tools": true,
+          "notes": "proxied — verify with Test connection, not independently measured"
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "label": "GPT-5.6 Sol",
+          "supports_tools": true,
+          "notes": "proxied — verify with Test connection, not independently measured"
+        }
+      ]
+    },
     "ollama": {
       "adapter": "openai_compatible",
       "label": "Ollama",
